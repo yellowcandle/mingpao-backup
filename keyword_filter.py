@@ -12,9 +12,8 @@ Handles filtering articles by Traditional Chinese keywords:
 
 import unicodedata
 import re
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional
 import logging
 
 

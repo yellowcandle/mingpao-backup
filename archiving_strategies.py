@@ -181,7 +181,6 @@ class ParallelStrategy(ArchivingStrategy):
                 found += 1
 
                 # Save result to database
-                article_data = futures[future]
                 article_record = repository.create_archive_record(
                     article_url=url,
                     wayback_url=result.wayback_url if result else None,

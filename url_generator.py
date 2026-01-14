@@ -12,7 +12,7 @@ Provides different strategies for generating and discovering article URLs:
 import re
 import requests
 from datetime import datetime
-from typing import List, Optional
+from typing import List
 from abc import ABC, abstractmethod
 import logging
 

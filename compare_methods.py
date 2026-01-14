@@ -22,8 +22,8 @@ index_urls = archiver.generate_article_urls(test_date)
 index_time = time.time() - start
 print(f"   URLs found: {len(index_urls)}")
 print(f"   Time taken: {index_time:.2f}s")
-print(f"   Method: Crawl index page HTML")
-print(f"   Accuracy: 100% (all URLs are real articles)")
+print("   Method: Crawl index page HTML")
+print("   Accuracy: 100% (all URLs are real articles)")
 
 print("\n" + "=" * 70 + "\n")
 
@@ -36,7 +36,7 @@ brute_urls = archiver._generate_urls_bruteforce(test_date)
 brute_time = time.time() - start
 print(f"   URLs generated: {len(brute_urls)}")
 print(f"   Time taken: {brute_time:.2f}s")
-print(f"   Method: Generate all possible combinations")
+print("   Method: Generate all possible combinations")
 print(f"   Accuracy: ~{len(index_urls)/len(brute_urls)*100:.1f}% (most URLs return 404)")
 
 print("\n" + "=" * 70)

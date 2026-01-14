@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 try:
-    from config_models import MingPaoConfig, ConfigValidator
+    from config_models import ConfigValidator
 except ImportError as e:
     print(f"Error importing config models: {e}")
     print("Please install pydantic: pip install pydantic>=2.0.0")

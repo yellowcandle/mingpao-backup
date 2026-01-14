@@ -1,0 +1,31 @@
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+warn_redundant_casts = true
+check_untyped_defs = true
+
+# Modules to check
+[[tool.mypy.overrides]]
+module = [
+    "url_generator.*",
+    "wayback_archiver.*", 
+    "keyword_filter.*",
+    "database_repository.*",
+    "config_models.*",
+    "archiving_strategies.*",
+    "mingpao_archiver_refactored.*"
+]
+
+# Ignore certain checks for development files
+[[tool.mypy.overrides]]
+module = "modal_app.*"
+ignore_errors = true
+
+# Disallow unsafe operations
+disallow_untyped_defs = true
+disallow_any_generics = true
+disallow_subclassing_any = true
+
+# Enable strict mode
+strict = true

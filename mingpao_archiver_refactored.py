@@ -19,26 +19,22 @@ Benefits of refactoring:
 
 import time
 import argparse
-import sqlite3
 import threading
-import json
 import requests
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Dict, Tuple
 import logging
 import sys
 
 # Import specialized components
 from url_generator import URLGenerator
-from wayback_archiver import WaybackArchiver, ArchiveResult
+from wayback_archiver import WaybackArchiver
 from keyword_filter import KeywordFilter
 from database_repository import (
     ArchiveRepository,
     ArchiveRecord,
     DailyProgress,
-    BatchProgress,
 )
 
 
@@ -337,7 +333,6 @@ class MingPaoArchiver:
         self, target_date: datetime, archive_mode: str = "all"
     ) -> List[Dict]:
         """Get URLs to process with filtering applied"""
-        date_str = target_date.strftime("%Y%m%d")
 
         # Generate URLs using URL generator
         article_urls = self.url_generator.generate_article_urls(target_date)
@@ -388,7 +383,6 @@ class MingPaoArchiver:
 
     def archive_date(self, target_date: datetime, mode: str = "all") -> Dict:
         """Archive articles for a single date"""
-        date_str = target_date.strftime("%Y%m%d")
         title_mode = f"{'關鍵詞' if mode == 'keywords' else ''}過濾"
 
         self.logger.info("=" * 60)

@@ -24,9 +24,9 @@ for i, url in enumerate(urls, 1):
     print(f"{i:3d}. {article_id:20s} -> {url}")
 
 print(f"\n{'=' * 60}")
-print(f"Summary:")
+print("Summary:")
 print(f"  Date: {test_date.strftime('%Y-%m-%d')}")
-print(f"  Method: Index page crawling")
+print("  Method: Index page crawling")
 print(f"  Total articles: {len(urls)}")
 print(f"{'=' * 60}\n")
 

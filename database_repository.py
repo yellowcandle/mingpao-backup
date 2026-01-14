@@ -13,7 +13,7 @@ import sqlite3
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Set, Optional, Tuple
+from typing import List, Dict, Set, Optional
 import logging
 from dataclasses import dataclass
 

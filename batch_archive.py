@@ -14,7 +14,6 @@ Usage:
 """
 
 import argparse
-import json
 import sqlite3
 import sys
 import time
@@ -281,7 +280,7 @@ class BatchArchiver:
 
             # Rate limiting between batches (30 seconds to be safe)
             if i < len(batches):
-                print(f"⏳ Waiting 30s before next batch...")
+                print("⏳ Waiting 30s before next batch...")
                 time.sleep(30)
 
         # Final summary

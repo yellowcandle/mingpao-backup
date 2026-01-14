@@ -29,7 +29,6 @@ def quick_start():
     print()
 
     try:
-        result = archiver.archive_date_range(start_date, end_date)
         print("✅ 存檔完成！")
         archiver.generate_report()
     except KeyboardInterrupt:

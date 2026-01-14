@@ -32,11 +32,20 @@ image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install(
         "requests>=2.31.0",
-        "internetarchive>=5.7.1",
         "newspaper4k>=0.9.0",
+        "pydantic>=2.0.0",
     )
-    # Add local Python files into the image
+    # Add local Python files into image
     .add_local_file("mingpao_hkga_archiver.py", "/root/mingpao_hkga_archiver.py")
+    .add_local_file(
+        "mingpao_archiver_refactored.py", "/root/mingpao_archiver_refactored.py"
+    )
+    .add_local_file("url_generator.py", "/root/url_generator.py")
+    .add_local_file("wayback_archiver.py", "/root/wayback_archiver.py")
+    .add_local_file("keyword_filter.py", "/root/keyword_filter.py")
+    .add_local_file("database_repository.py", "/root/database_repository.py")
+    .add_local_file("config_models.py", "/root/config_models.py")
+    .add_local_file("archiving_strategies.py", "/root/archiving_strategies.py")
     .add_local_file("config.json", "/root/config.json")
 )
 
@@ -74,9 +83,9 @@ def archive_articles(request_data: dict):
     import json
     from datetime import datetime, timedelta
 
-    # Import archiver (copied into image)
+    # Import refactored archiver (copied into image)
     sys.path.insert(0, "/root")
-    from mingpao_hkga_archiver import MingPaoHKGAArchiver, parse_date
+    from mingpao_archiver_refactored import MingPaoArchiver, parse_date
 
     # Update config to use persistent volume
     config_path = Path("/root/config.json")
@@ -98,7 +107,7 @@ def archive_articles(request_data: dict):
         json.dump(config, f)
 
     # Create archiver instance
-    archiver = MingPaoHKGAArchiver(temp_config)
+    archiver = MingPaoArchiver(temp_config)
 
     # Apply request parameters
     mode = request_data.get("mode", "date")
@@ -311,7 +320,7 @@ def daily_archive():
     from datetime import datetime, timedelta
 
     sys.path.insert(0, "/root")
-    from mingpao_hkga_archiver import MingPaoHKGAArchiver
+    from mingpao_archiver_refactored import MingPaoArchiver
 
     # Setup config for volume
     config_path = Path("/root/config.json")
@@ -329,7 +338,7 @@ def daily_archive():
     with open(temp_config, "w") as f:
         json.dump(config, f)
 
-    archiver = MingPaoHKGAArchiver(temp_config)
+    archiver = MingPaoArchiver(temp_config)
 
     try:
         # Archive last 3 days
@@ -371,7 +380,7 @@ def batch_historical_archive(start_date: str, end_date: str):
     from datetime import datetime, timedelta
 
     sys.path.insert(0, "/root")
-    from mingpao_hkga_archiver import MingPaoHKGAArchiver, parse_date
+    from mingpao_archiver_refactored import MingPaoArchiver, parse_date
 
     # Setup config
     config_path = Path("/root/config.json")
@@ -389,17 +398,17 @@ def batch_historical_archive(start_date: str, end_date: str):
     with open(temp_config, "w") as f:
         json.dump(config, f)
 
-    archiver = MingPaoHKGAArchiver(temp_config)
+    archiver = MingPaoArchiver(temp_config)
 
     try:
         start = parse_date(start_date)
         end = parse_date(end_date)
 
-        print(f"=" * 60)
-        print(f"BATCH HISTORICAL ARCHIVE")
+        print("=" * 60)
+        print("BATCH HISTORICAL ARCHIVE")
         print(f"Start: {start.strftime('%Y-%m-%d')}")
         print(f"End: {end.strftime('%Y-%m-%d')}")
-        print(f"=" * 60)
+        print("=" * 60)
 
         # Process month by month
         current = start
@@ -439,10 +448,10 @@ def batch_historical_archive(start_date: str, end_date: str):
 
             month_count += 1
 
-        print(f"\n" + "=" * 60)
+        print("\n" + "=" * 60)
         print(f"BATCH COMPLETE: Processed {month_count} months")
         print(f"Stats: {archiver.stats}")
-        print(f"=" * 60)
+        print("=" * 60)
 
         return {
             "status": "complete",
