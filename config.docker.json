@@ -8,7 +8,7 @@
   },
   "archiving": {
     "rate_limit_delay": 3,
-    "verify_first": false,
+    "verify_first": true,
     "timeout": 30,
     "max_retries": 3,
     "retry_delay": 10

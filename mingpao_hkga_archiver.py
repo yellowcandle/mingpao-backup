@@ -926,6 +926,27 @@ class MingPaoHKGAArchiver:
                     "error": "Timeout after retries",
                 }
 
+        except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
+            # SSL/Connection errors often indicate rate limiting or server issues
+            if retry_count < config["max_retries"]:
+                # Use exponential backoff for connection issues
+                wait_time = config["retry_delay"] * (2 ** retry_count)
+                self.logger.warning(
+                    f"🔌 連線錯誤，等待 {wait_time}s 後重試 {retry_count + 1}/{config['max_retries']}: {url}"
+                )
+                time.sleep(wait_time)
+                return self.archive_to_wayback(url, retry_count + 1)
+            else:
+                self.logger.error(f"🔌 連線錯誤（重試次數用盡）: {url} - {str(e)}")
+                with self.stats_lock:
+                    self.stats["error"] += 1
+                return {
+                    "status": "error",
+                    "wayback_url": None,
+                    "http_status": None,
+                    "error": f"Connection error after retries: {str(e)}",
+                }
+
         except Exception as e:
             self.logger.error(f"💥 例外錯誤: {url} - {str(e)}")
             with self.stats_lock:
@@ -1058,9 +1079,9 @@ class MingPaoHKGAArchiver:
 
             if self.config["archiving"]["verify_first"]:
                 articles_to_process = [
-                    {"url": url}
-                    for url in articles_to_process
-                    if self.check_url_exists(url["url"])
+                    article
+                    for article in articles_to_process
+                    if self.check_url_exists(article["url"])
                 ]
 
         return articles_to_process

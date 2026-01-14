@@ -9,7 +9,26 @@
       "Bash(uv run:*)",
       "mcp__plugin_playwright_playwright__browser_navigate",
       "mcp__plugin_playwright_playwright__browser_evaluate",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(git merge:*)",
+      "Bash(git fetch:*)",
+      "Bash(iconv:*)",
+      "Bash(docker run:*)",
+      "Bash(docker images:*)",
+      "Bash(docker build:*)",
+      "Bash(docker tag:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "mcp__sequential-thinking__sequentialthinking",
+      "Bash(git checkout:*)",
+      "Bash(modal deploy:*)",
+      "Bash(pip install:*)",
+      "WebFetch(domain:yellowcandle--mingpao-archiver-dashboard.modal.run)",
+      "Bash(git push:*)",
+      "Bash(git branch:*)",
+      "Bash(modal run:*)",
+      "Bash(python3:*)"
     ]
   }
 }

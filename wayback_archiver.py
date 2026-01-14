@@ -255,21 +255,32 @@ class WaybackArchiver:
         # Try to save via HTTP
         result = self._save_via_http(url, config)
 
-        # Handle retries for timeouts
-        if (
-            result.status == "error"
-            and result.error
-            and "timeout" in result.error.lower()
-        ):
-            if retry_count < config["max_retries"]:
-                self.logger.warning(
-                    f"⏱️ 存檔超時，重試 {retry_count + 1}/{config['max_retries']}: {url}"
-                )
-                time.sleep(config["retry_delay"])
-                return self.archive_url(url, config, retry_count + 1)
-            else:
-                self.logger.error(f"⏱️ 存檔超時（重試次數用盡）: {url}")
-                self._update_stats("timeout")
-                return ArchiveResult(status="timeout", error="Timeout after retries")
+        # Handle retries for timeouts and connection errors
+        if result.status == "error" and result.error:
+            error_lower = result.error.lower()
+            is_timeout = "timeout" in error_lower
+            is_connection_error = any(
+                keyword in error_lower
+                for keyword in ["ssl", "connection", "eof", "reset", "refused"]
+            )
+
+            if is_timeout or is_connection_error:
+                if retry_count < config["max_retries"]:
+                    # Use exponential backoff for connection errors
+                    wait_time = config["retry_delay"] * (2 ** retry_count) if is_connection_error else config["retry_delay"]
+                    error_type = "連線錯誤" if is_connection_error else "存檔超時"
+                    self.logger.warning(
+                        f"{'🔌' if is_connection_error else '⏱️'} {error_type}，等待 {wait_time}s 後重試 {retry_count + 1}/{config['max_retries']}: {url}"
+                    )
+                    time.sleep(wait_time)
+                    return self.archive_url(url, config, retry_count + 1)
+                else:
+                    error_type = "連線錯誤" if is_connection_error else "存檔超時"
+                    self.logger.error(f"{'🔌' if is_connection_error else '⏱️'} {error_type}（重試次數用盡）: {url}")
+                    self._update_stats("timeout" if is_timeout else "error")
+                    return ArchiveResult(
+                        status="timeout" if is_timeout else "error",
+                        error=f"{error_type} after retries: {result.error}",
+                    )
 
         return result
