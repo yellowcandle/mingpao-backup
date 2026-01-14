@@ -494,6 +494,56 @@ def get_daily_trends(cursor) -> list:
     ]
 
 
+def get_date_coverage(cursor) -> dict:
+    """Calculate date range coverage from 2013-01-01 to today."""
+    from datetime import date, timedelta
+
+    start_date = date(2013, 1, 1)
+    end_date = date.today()
+    total_days = (end_date - start_date).days + 1
+
+    # Get all dates with data from daily_progress
+    cursor.execute("""
+        SELECT DISTINCT date FROM daily_progress
+        WHERE articles_found > 0
+    """)
+    archived_dates = set(row[0] for row in cursor.fetchall())
+
+    # Calculate coverage by year
+    year_coverage = {}
+    missing_ranges = []
+    current_missing_start = None
+
+    for i in range(total_days):
+        check_date = start_date + timedelta(days=i)
+        date_str = check_date.strftime('%Y-%m-%d')
+        year = check_date.year
+
+        if year not in year_coverage:
+            year_coverage[year] = {'total': 0, 'archived': 0}
+        year_coverage[year]['total'] += 1
+
+        if date_str in archived_dates:
+            year_coverage[year]['archived'] += 1
+            if current_missing_start:
+                missing_ranges.append((current_missing_start, check_date - timedelta(days=1)))
+                current_missing_start = None
+        else:
+            if not current_missing_start:
+                current_missing_start = check_date
+
+    if current_missing_start:
+        missing_ranges.append((current_missing_start, end_date))
+
+    return {
+        'total_days': total_days,
+        'archived_days': len(archived_dates),
+        'coverage_pct': len(archived_dates) / total_days * 100 if total_days > 0 else 0,
+        'year_coverage': year_coverage,
+        'missing_ranges': missing_ranges[:10]  # Limit to 10 ranges for display
+    }
+
+
 def generate_css() -> str:
     """Generate inline CSS for dashboard"""
     return """
@@ -833,7 +883,77 @@ def generate_trends_rows(trends) -> str:
     return html
 
 
-def build_dashboard_html(overall, breakdown, batches, recent, trends, timestamp) -> str:
+def generate_coverage_section(coverage: dict) -> str:
+    """Generate the date coverage section HTML"""
+    if not coverage:
+        return ""
+
+    total_days = coverage['total_days']
+    archived_days = coverage['archived_days']
+    coverage_pct = coverage['coverage_pct']
+    year_coverage = coverage['year_coverage']
+    missing_ranges = coverage['missing_ranges']
+
+    # Generate year progress bars
+    year_bars = ""
+    for year in sorted(year_coverage.keys()):
+        data = year_coverage[year]
+        pct = (data['archived'] / data['total'] * 100) if data['total'] > 0 else 0
+        color = "#22c55e" if pct >= 80 else "#eab308" if pct >= 40 else "#ef4444"
+        year_bars += f"""
+            <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                <span style="width: 50px; font-weight: bold;">{year}</span>
+                <div style="flex: 1; background: #374151; border-radius: 4px; height: 20px; overflow: hidden;">
+                    <div style="width: {pct:.1f}%; height: 100%; background: {color};"></div>
+                </div>
+                <span style="width: 80px; text-align: right; margin-left: 10px;">{pct:.0f}% ({data['archived']}/{data['total']})</span>
+            </div>
+        """
+
+    # Generate missing ranges list
+    missing_html = ""
+    for start, end in missing_ranges:
+        days = (end - start).days + 1
+        start_str = start.strftime('%Y-%m-%d')
+        end_str = end.strftime('%Y-%m-%d')
+        missing_html += f"""
+            <div style="padding: 8px 12px; background: #1f2937; border-radius: 6px; margin-bottom: 6px;">
+                <span style="color: #f87171;">●</span>
+                <strong>{start_str}</strong> to <strong>{end_str}</strong>
+                <span style="color: #9ca3af; margin-left: 8px;">({days} days)</span>
+            </div>
+        """
+
+    if not missing_html:
+        missing_html = '<div style="color: #22c55e;">All dates archived!</div>'
+
+    return f"""
+        <section class="section">
+            <h2>📅 Archive Coverage</h2>
+            <div style="margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                    <span>Coverage: {archived_days:,} / {total_days:,} days</span>
+                    <span style="font-weight: bold; color: {'#22c55e' if coverage_pct >= 80 else '#eab308' if coverage_pct >= 40 else '#ef4444'};">{coverage_pct:.1f}%</span>
+                </div>
+                <div style="background: #374151; border-radius: 8px; height: 24px; overflow: hidden;">
+                    <div style="width: {coverage_pct:.1f}%; height: 100%; background: linear-gradient(90deg, #22c55e, #16a34a); transition: width 0.3s;"></div>
+                </div>
+            </div>
+
+            <h3 style="margin: 20px 0 12px; font-size: 1rem; color: #9ca3af;">Year by Year</h3>
+            <div style="margin-bottom: 20px;">
+                {year_bars}
+            </div>
+
+            <h3 style="margin: 20px 0 12px; font-size: 1rem; color: #9ca3af;">Missing Ranges (Top 10)</h3>
+            <div style="max-height: 200px; overflow-y: auto;">
+                {missing_html}
+            </div>
+        </section>
+    """
+
+
+def build_dashboard_html(overall, breakdown, batches, recent, trends, timestamp, coverage=None) -> str:
     """Generate complete dashboard HTML"""
 
     # Status emoji mapping
@@ -892,6 +1012,9 @@ def build_dashboard_html(overall, breakdown, batches, recent, trends, timestamp)
             <h2>Status Breakdown</h2>
             {generate_status_bars(breakdown, overall['total'])}
         </section>
+
+        <!-- Archive Coverage -->
+        {generate_coverage_section(coverage) if coverage else ''}
 
         <!-- Active Batches -->
         {generate_batch_section(batches) if batches else ''}
@@ -967,6 +1090,7 @@ def dashboard():
         active_batches = get_active_batches(cursor)
         recent_archives = get_recent_archives(cursor)
         daily_trends = get_daily_trends(cursor)
+        date_coverage = get_date_coverage(cursor)
 
         conn.close()
 
@@ -977,7 +1101,8 @@ def dashboard():
             batches=active_batches,
             recent=recent_archives,
             trends=daily_trends,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
+            coverage=date_coverage
         )
 
         return HTMLResponse(content=html)
