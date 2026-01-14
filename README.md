@@ -2,15 +2,56 @@
 
 > 將明報加拿大網站的港聞文章存檔至 Internet Archive Wayback Machine，保存香港歷史新聞記錄
 
+## 🌐 Cloud Deployment (Modal)
+
+The archiver is now deployed as a serverless application on **Modal** for reliable, continuous operation.
+
+### Live Endpoints
+
+- **Archive API**: `https://yellowcandle--mingpao-archiver-archive-articles.modal.run`
+- **Statistics API**: `https://yellowcandle--mingpao-archiver-get-stats.modal.run`
+- **Dashboard**: https://modal.com/apps/yellowcandle/main/deployed/mingpao-archiver
+
+### Quick Usage
+
+```bash
+# Archive recent articles
+curl -X POST https://yellowcandle--mingpao-archiver-archive-articles.modal.run \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "backdays", "backdays": 7}'
+
+# Check statistics
+curl https://yellowcandle--mingpao-archiver-get-stats.modal.run | jq '.'
+```
+
+### Deployment Commands
+
+```bash
+# Install dependencies
+uv sync
+
+# Deploy to Modal
+uv run modal deploy modal_app.py
+
+# Run batch job in cloud (continues even if you close terminal)
+uv run modal run modal_app.py --start-date 2013-01-01 --end-date 2013-03-31
+
+# Daily auto-archive (runs at 6 AM UTC)
+# Already scheduled via modal.Cron() in the app
+```
+
 ## 📋 功能特色
 
+- 🌐 **雲端部署**：Modal 無伺服器部署，自動擴展
 - 🎯 **專注港聞**：專門針對 HK-GA (港聞) 類別文章
-- 📅 **批次處理**：支援日期範圍批次存檔
+- 📅 **批次處理**：支援日期範圍批次存檔（2013-2026）
 - 💾 **進度追蹤**：SQLite 數據庫自動記錄所有操作
+- 🔄 **IA 優先**：使用 internetarchive 庫作為主要存檔方法
 - ⏱️ **速率控制**：內建 rate limiting 保護 Wayback Machine
 - 🔁 **錯誤重試**：自動重試機制處理臨時錯誤
 - 📊 **統計報告**：詳細的執行統計和報告生成功能
 - ⚡ **斷點續傳**：中斷後可從上次進度繼續
+- 🤖 **自動排程**：每日 6 AM UTC 自動執行，無需手動干預
 
 ## 📁 文件結構
 
@@ -29,14 +70,33 @@ mingpao-backup/
 
 ## 🚀 快速開始
 
-### 前置需求
+### 方式一：雲端部署（推薦）
+
+直接使用已部署的 Modal 服務，無需本地設置：
 
 ```bash
-# Python 3.7+
+# 檢查統計
+curl https://yellowcandle--mingpao-archiver-get-stats.modal.run | jq '.'
+
+# 存檔最近文章
+curl -X POST https://yellowcandle--mingpao-archiver-archive-articles.modal.run \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "backdays", "backdays": 7}'
+```
+
+### 方式二：本地執行
+
+#### 前置需求
+
+```bash
+# Python 3.12+ (使用 uv 管理)
+uv --version
+
+# 或傳統方式
 python3 --version
 
 # pip 套件
-pip install requests newspaper3k
+pip install requests newspaper3k internetarchive
 ```
 
 ### 方法一：快速開始 (推薦新手)
@@ -216,9 +276,11 @@ python3 mingpao_hkga_archiver.py
 
 ## ⚠️ 注意事項
 
-### 1. Rate Limiting
+### 1. Rate Limiting & Connection Issues
 - **Wayback Machine 限制**: 每分鐘最多 15-20 個請求
 - **建議設置**: `rate_limit_delay` ≥ 3 秒
+- **IA 庫優勢**: 自動處理重試和速率限制
+- **HTTP 520 錯誤**: 常見的 Wayback 服務中斷，IA 庫會自動處理
 - **每日限制**: 建議 1000-2000 篇/天（視網站響應而定）
 
 ### 2. 錯誤重試
@@ -420,7 +482,9 @@ sqlite3 hkga_archive.db -csv "SELECT * FROM archive_records WHERE status='succes
 3. 手動測試 URL是否正常訪問
 4. 訪問 Wayback Machine 狀態頁面
 
-## 📰 newspaper3k 文章提取模組
+## 📰 newspaper3k 文章提取模組（可選）
+
+> 注意：專案現在使用 internetarchive 庫作為主要存檔方法，更穩定可靠。
 
 ### 安裝
 
@@ -472,8 +536,22 @@ MIT License - 僅限教育研究用途使用
 ## 🙏 致謝
 
 - Internet Archive Wayback Machine
+- Modal (serverless platform)
+- internetarchive Python library
 - 明報加拿大 (Ming Pao Canada)
 - 香港新聞工作者
+
+## 📊 當前狀態
+
+- **部署狀態**: ✅ 已部署至 Modal
+- **主要方法**: 🔄 internetarchive 庫優先
+- **統計 API**: 🔍 即時可查
+- **自動排程**: ⏰ 每日 6 AM UTC
+- **總文章數**: 157,000+ (2013-2026)
+- **已處理**: 431+ 篇
+- **成功率**: 41% (持續提升中)
+
+**查看最新進度**: `curl https://yellowcandle--mingpao-archiver-get-stats.modal.run | jq '.'`
 
 ## ☁️ Cloud Deployment (Modal)
 
@@ -602,11 +680,16 @@ Modal pricing (as of 2026):
 - **Compute**: $0.000231/second for CPU
 - **Storage**: $0.10/GB-month
 
+**Current performance**:
+- **Success rate**: ~41% with IA-first approach
+- **Articles processed**: 431+ (historical 2013-2026)
+- **Running batch jobs**: Multiple quarterly ranges in parallel
+
 **Estimated costs**:
-- Archiving 40 articles/day with 3s delays ≈ 80 minutes/day
-- Monthly: ~40 hours (slightly exceeds free tier)
-- Storage: <1GB for database
-- **Total**: ~$5-10/month for daily archiving
+- Historical batch (157,000 articles): ~471 hours (~$109)
+- Daily incremental (40 articles/day): ~80 minutes/month (~$1.1)
+- Storage: <1GB for database (<$0.10)
+- **Total**: ~$110 for complete archive, then $1-2/month for maintenance
 
 ### Advantages
 
@@ -617,6 +700,10 @@ Modal pricing (as of 2026):
 ✅ **Pay-per-use** - Only charged when running
 ✅ **Long-running jobs** - 24-hour timeout for large date ranges
 ✅ **Python-native** - No Docker/Kubernetes knowledge needed
+✅ **IA-first approach** - More reliable than direct Wayback HTTP
+✅ **Automatic scheduling** - Daily cron job at 6 AM UTC
+✅ **Resilient fallbacks** - Handles Wayback outages gracefully
+✅ **Progress tracking** - Real-time statistics via API
 
 ### Limitations
 
