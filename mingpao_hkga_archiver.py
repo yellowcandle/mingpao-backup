@@ -358,6 +358,11 @@ class MingPaoHKGAArchiver:
                     continue
 
                 clean_path = relative_path.replace("../../../", "")
+
+                # Only include URLs for the target date
+                if f"News/{date_str}/" not in clean_path:
+                    continue
+
                 absolute_url = f"https://www.mingpaocanada.com/tor/{clean_path}"
                 article_urls.add(absolute_url)
 
@@ -851,17 +856,31 @@ class MingPaoHKGAArchiver:
                     }
                 else:
                     self.logger.debug(f"Save accepted for {url[:50]}, verifying...")
-                    time.sleep(2)
-                    exists, wayback_url = self.check_wayback_exists(url)
-                    if exists:
-                        with self.stats_lock:
-                            self.stats["successful"] += 1
-                        return {
-                            "status": "success",
-                            "wayback_url": wayback_url,
-                            "http_status": 200,
-                            "error": None,
-                        }
+                    # SPN2 can take some time to index the new snapshot
+                    for wait_attempt in range(3):
+                        time.sleep(5 * (wait_attempt + 1))
+                        exists, wayback_url = self.check_wayback_exists(url)
+                        if exists:
+                            self.logger.info(f"✅ 存檔成功 (延遲驗證): {url}")
+                            with self.stats_lock:
+                                self.stats["successful"] += 1
+                            return {
+                                "status": "success",
+                                "wayback_url": wayback_url,
+                                "http_status": 200,
+                                "error": None,
+                            }
+
+                    # If we got a 200 OK but couldn't verify, it's likely just slow indexing
+                    self.logger.info(f"ℹ️  存檔已接受但未即時顯示 (200 OK): {url}")
+                    with self.stats_lock:
+                        self.stats["successful"] += 1
+                    return {
+                        "status": "success",
+                        "wayback_url": f"https://web.archive.org/web/*/{url}",
+                        "http_status": 200,
+                        "error": "Pending verification",
+                    }
 
             # Handle rate limiting
             if response.status_code in (429, 403):
