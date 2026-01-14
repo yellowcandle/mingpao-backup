@@ -471,18 +471,26 @@ def main(
     end_date: Optional[str] = None,
 ):
     """
-    Local entry point - can trigger batch archive or run tests
+    Local entry point - triggers batch archive in the cloud
 
     Usage:
-        # Quick test (today's date)
-        modal run modal_app.py
+        # Archive from start date to today
+        modal run modal_app.py --start-date 2025-12-01
 
-        # Batch historical archive (runs in cloud, detached)
+        # Archive specific date range
         modal run modal_app.py --start-date 2013-01-01 --end-date 2026-01-15
+
+        # Test via HTTP endpoints (recommended):
+        curl https://yellowcandle--mingpao-archiver-get-stats.modal.run
     """
     import json
+    from datetime import datetime
 
-    if start_date and end_date:
+    if start_date:
+        # Default end_date to today if not provided
+        if not end_date:
+            end_date = datetime.now().strftime("%Y-%m-%d")
+
         # Spawn batch job in the cloud (detached)
         print("=" * 60)
         print("SPAWNING BATCH ARCHIVE IN CLOUD")
@@ -501,21 +509,16 @@ def main(
         print(f"Job spawned with ID: {call.object_id}")
         return
 
-    # Default: quick test
-    test_request = {"mode": "date", "date": "2026-01-13"}
-
+    # No arguments - show usage
     print("=" * 60)
-    print("Testing Modal archiver locally")
+    print("Ming Pao Archiver - Modal Deployment")
     print("=" * 60)
-    print(f"\nRequest: {json.dumps(test_request, indent=2)}")
-    print("\nCalling archive_articles.local()...\n")
-
-    result = archive_articles.local(test_request)
-    print(json.dumps(result, indent=2, ensure_ascii=False))
-
-    print("\n" + "=" * 60)
-    print("Fetching statistics...")
-    print("=" * 60 + "\n")
-
-    stats = get_stats.local()
-    print(json.dumps(stats, indent=2, ensure_ascii=False))
+    print("\nUsage:")
+    print("  modal run modal_app.py --start-date 2025-12-01 [--end-date 2026-01-15]")
+    print("\nTo test the deployed app, use HTTP endpoints:")
+    print("  curl https://yellowcandle--mingpao-archiver-get-stats.modal.run")
+    print("\nTo trigger archiving:")
+    print("  curl -X POST https://yellowcandle--mingpao-archiver-archive-articles.modal.run \\")
+    print("    -H 'Content-Type: application/json' \\")
+    print("    -d '{\"mode\": \"date\", \"date\": \"2026-01-14\", \"daily_limit\": 5}'")
+    print("=" * 60)
