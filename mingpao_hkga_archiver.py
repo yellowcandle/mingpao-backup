@@ -26,7 +26,7 @@ from pathlib import Path
 import logging
 import sys
 import argparse
-from typing import List, Dict, Tuple, Optional, Set
+from typing import List, Dict, Tuple, Optional, Set, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
@@ -220,9 +220,17 @@ class MingPaoHKGAArchiver:
         self.logger = logging.getLogger(__name__)
 
     def setup_database(self):
-        """設置 SQLite 數據庫"""
+        """設置 SQLite 數據庫
+
+        Thread Safety Notes:
+        - This method creates a single SQLite connection for the main thread.
+        - Worker threads (_archive_url_worker) create their own per-thread connections
+          to avoid database lock errors when running in parallel mode.
+        - The connection uses check_same_thread=False to allow safe access from
+          worker threads when properly managed.
+        """
         db_path = self.config["database"]["path"]
-        self.conn = sqlite3.connect(db_path)
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.execute("PRAGMA encoding = 'UTF-8'")
         self.cursor = self.conn.cursor()
 
@@ -253,61 +261,30 @@ class MingPaoHKGAArchiver:
                 articles_not_found INTEGER,
                 execution_time REAL,
                 completed_at TIMESTAMP,
-                keywords_filtered INTEGER DEFAULT 0
+                keywords_filtered INTEGER
             )
         """)
-
-        self.cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_status ON archive_records(status);"
-        )
-        self.cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_date ON archive_records(archive_date);"
-        )
-        self.cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_keywords ON archive_records(matched_keywords);"
-        )
-        # Performance optimization: Speed up duplicate URL checks
-        self.cursor.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_article_url ON archive_records(article_url);"
-        )
-        # Compound index for common query pattern (checking if URL exists with status)
-        self.cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_url_status ON archive_records(article_url, status);"
-        )
-
-        try:
-            self.cursor.execute(
-                "ALTER TABLE archive_records ADD COLUMN matched_keywords TEXT"
-            )
-        except sqlite3.OperationalError:
-            pass
-        try:
-            self.cursor.execute(
-                "ALTER TABLE archive_records ADD COLUMN checked_wayback INTEGER DEFAULT 0"
-            )
-        except sqlite3.OperationalError:
-            pass
-        try:
-            self.cursor.execute(
-                "ALTER TABLE archive_records ADD COLUMN title_search_only INTEGER DEFAULT 0"
-            )
-        except sqlite3.OperationalError:
-            pass
-        try:
-            self.cursor.execute(
-                "ALTER TABLE archive_records ADD COLUMN article_title TEXT"
-            )
-        except sqlite3.OperationalError:
-            pass
-        try:
-            self.cursor.execute(
-                "ALTER TABLE daily_progress ADD COLUMN keywords_filtered INTEGER DEFAULT 0"
-            )
-        except sqlite3.OperationalError:
-            pass
-
         self.conn.commit()
-        self.logger.info(f"數據庫已初始化: {db_path}")
+
+    def _validate_url(self, url: str) -> bool:
+        """驗證 URL 格式是否安全 (防止命令注入)
+
+        Args:
+            url: 要驗證的 URL
+
+        Returns:
+            bool: URL 有效返回 True，否則返回 False
+        """
+        from urllib.parse import urlparse
+
+        try:
+            parsed = urlparse(url)
+            scheme_ok = parsed.scheme in ("http", "https")
+            netloc_ok = bool(parsed.netloc)
+            no_injection = not any(char in url for char in ";&|$`")
+            return scheme_ok and netloc_ok and no_injection
+        except Exception:
+            return False
 
     def setup_directories(self):
         """創建必要的目錄"""
@@ -339,7 +316,8 @@ class MingPaoHKGAArchiver:
 
         try:
             self.logger.debug(f"從索引頁爬取: {index_url}")
-            response = requests.get(
+            response = self._make_request(
+                "GET",
                 index_url,
                 timeout=self.config["archiving"]["timeout"],
                 headers={
@@ -815,8 +793,15 @@ class MingPaoHKGAArchiver:
         import subprocess
         import json
 
+        if not self._validate_url(url):
+            self.logger.error(f"❌ URL 格式無效: {url}")
+            return {
+                "status": "failed",
+                "error": "Invalid URL format",
+                "http_status": None,
+            }
+
         try:
-            # Check if already exists using search
             result = subprocess.run(
                 ["ia", "search", url, "--field", "identifier", "--limit", "1"],
                 capture_output=True,
@@ -839,19 +824,22 @@ class MingPaoHKGAArchiver:
                 }
 
             # Try to save using IA
-            metadata = {
-                "title": "Ming Pao Canada Article",
-                "description": f"Archived from {url}",
-                "subject": "mingpao",
-                "language": "chi",
-            }
+            if not self._validate_url(url):
+                self.logger.warning(f"⚠️ URL 格式無效，跳過存檔: {url}")
+            else:
+                metadata = {
+                    "title": "Ming Pao Canada Article",
+                    "description": f"Archived from {url}",
+                    "subject": "mingpao",
+                    "language": "chi",
+                }
 
-            result = subprocess.run(
-                ["ia", "save", "--metadata", json.dumps(metadata), url],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
+                result = subprocess.run(
+                    ["ia", "save", "--metadata", json.dumps(metadata), url],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
 
             if result.returncode == 0:
                 wayback_url = f"https://web.archive.org/web/2/{url}"
@@ -983,61 +971,61 @@ class MingPaoHKGAArchiver:
                 or "520" in str(e)
             ):
                 self.logger.info(f"🔄 嘗試使用 IA 庫備援: {url}")
-                try:
-                    import subprocess
+                if not self._validate_url(url):
+                    self.logger.warning(f"⚠️ URL 格式無效，跳過備援: {url}")
+                else:
+                    try:
+                        import subprocess
 
-                    # Use ia CLI save command as fallback
-                    result = subprocess.run(
-                        [
-                            "ia",
-                            "save",
-                            "--metadata",
-                            '{"title": "Ming Pao Article"}',
-                            url,
-                        ],
-                        capture_output=True,
-                        text=True,
-                        timeout=60,
-                    )
-
-                    if result.returncode == 0:
-                        wayback_url = f"https://web.archive.org/web/2/{url}"
-                        self.logger.info(f"✅ 備援成功 (IA CLI): {url}")
-                        self.logger.info(f"   Wayback: {wayback_url}")
-                        with self.stats_lock:
-                            self.stats["successful"] += 1
-                        return {
-                            "status": "success",
-                            "wayback_url": wayback_url,
-                            "http_status": 200,
-                            "error": None,
-                        }
-                    else:
-                        self.logger.warning(f"⚠️  IA CLI 失敗: {result.stderr}")
-                        # Check if already exists
-                        exists_check = f"https://web.archive.org/web/2/{url}"
-                        check_resp = self._make_request(
-                            "GET",
-                            exists_check,
-                            timeout=config["timeout"],
-                            headers=headers,
+                        result = subprocess.run(
+                            [
+                                "ia",
+                                "save",
+                                "--metadata",
+                                '{"title": "Ming Pao Article"}',
+                                url,
+                            ],
+                            capture_output=True,
+                            text=True,
+                            timeout=60,
                         )
-                        if check_resp and check_resp.status_code == 200:
+
+                        if result.returncode == 0:
+                            wayback_url = f"https://web.archive.org/web/2/{url}"
+                            self.logger.info(f"✅ 備援成功 (IA CLI): {url}")
+                            self.logger.info(f"   Wayback: {wayback_url}")
                             with self.stats_lock:
-                                self.stats["already_archived"] += 1
+                                self.stats["successful"] += 1
                             return {
-                                "status": "exists",
-                                "wayback_url": exists_check,
+                                "status": "success",
+                                "wayback_url": wayback_url,
                                 "http_status": 200,
                                 "error": None,
                             }
-
-                except subprocess.TimeoutExpired:
-                    self.logger.warning(f"⏱️  IA CLI 超時: {url}")
-                except FileNotFoundError:
-                    self.logger.warning(f"⚠️  IA CLI 未找到，跳過備援")
-                except Exception as fallback_error:
-                    self.logger.warning(f"⚠️  IA 備援錯誤: {str(fallback_error)}")
+                        else:
+                            self.logger.warning(f"⚠️  IA CLI 失敗: {result.stderr}")
+                            exists_check = f"https://web.archive.org/web/2/{url}"
+                            check_resp = self._make_request(
+                                "GET",
+                                exists_check,
+                                timeout=config["timeout"],
+                                headers=headers,
+                            )
+                            if check_resp and check_resp.status_code == 200:
+                                with self.stats_lock:
+                                    self.stats["already_archived"] += 1
+                                return {
+                                    "status": "exists",
+                                    "wayback_url": exists_check,
+                                    "http_status": 200,
+                                    "error": None,
+                                }
+                    except subprocess.TimeoutExpired:
+                        self.logger.warning(f"⏱️  IA CLI 超時: {url}")
+                    except FileNotFoundError:
+                        self.logger.warning(f"⚠️  IA CLI 未找到，跳過備援")
+                    except Exception as fallback_error:
+                        self.logger.warning(f"⚠️  IA 備援錯誤: {str(fallback_error)}")
 
             with self.stats_lock:
                 self.stats["failed"] += 1
@@ -1496,7 +1484,7 @@ class MingPaoHKGAArchiver:
         output_file: Optional[str] = None,
         verify_urls: bool = True,
         check_wayback: bool = True,
-    ) -> Dict[str, any]:
+    ) -> Dict[str, "Any"]:
         """Generate CSV for crowdsourced archiving
 
         Args:
