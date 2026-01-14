@@ -7,11 +7,11 @@
     "file": "logs/hkga_archiver.log"
   },
   "archiving": {
-    "rate_limit_delay": 3,
+    "rate_limit_delay": 5,
     "verify_first": true,
-    "timeout": 30,
-    "max_retries": 3,
-    "retry_delay": 10
+    "timeout": 60,
+    "max_retries": 5,
+    "retry_delay": 15
   },
   "daily_limit": 2000,
   "date_range": {
@@ -22,9 +22,9 @@
   "use_newspaper4k_titles": false,
   "use_index_page": true,
   "parallel": {
-    "enabled": false,
-    "max_workers": 2,
-    "rate_limit_delay": 3.0
+    "enabled": true,
+    "max_workers": 1,
+    "rate_limit_delay": 5.0
   },
   "keywords": {
     "enabled": false,
