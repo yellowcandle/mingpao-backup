@@ -1031,7 +1031,7 @@ def dashboard():
     timeout=86400,  # 24 hours for large backfills
     cpu=1,
 )
-def backfill_titles(batch_size: int = 100, rate_limit_delay: int = 3):
+def backfill_titles(batch_size: int = 100, rate_limit_delay: int = 3, clear_garbled: bool = False):
     """
     Backfill article titles for records with NULL titles
 
@@ -1041,6 +1041,7 @@ def backfill_titles(batch_size: int = 100, rate_limit_delay: int = 3):
     Args:
         batch_size: Number of articles to process (default: 100)
         rate_limit_delay: Seconds between requests (default: 3)
+        clear_garbled: Clear garbled titles (containing 'æ') before backfill (default: False)
 
     Returns:
         Dictionary with backfill statistics
@@ -1048,6 +1049,9 @@ def backfill_titles(batch_size: int = 100, rate_limit_delay: int = 3):
     Usage:
         # Via Python
         modal run modal_app.py::backfill_titles --batch-size 100
+
+        # Clear garbled titles and re-fetch
+        modal run modal_app.py::backfill_titles --clear-garbled --batch-size 500
 
         # Or trigger via spawn
         backfill_titles.spawn(batch_size=500, rate_limit_delay=3)
@@ -1084,6 +1088,28 @@ def backfill_titles(batch_size: int = 100, rate_limit_delay: int = 3):
 
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+
+    # Clear garbled/generic titles if requested
+    if clear_garbled:
+        # Count garbled titles (mojibake)
+        cursor.execute("SELECT COUNT(*) FROM archive_records WHERE article_title LIKE '%æ%'")
+        garbled_count = cursor.fetchone()[0]
+
+        # Count generic titles (site name only)
+        cursor.execute("SELECT COUNT(*) FROM archive_records WHERE article_title LIKE '%明報新聞網%' AND LENGTH(article_title) < 50")
+        generic_count = cursor.fetchone()[0]
+
+        print(f"\n🧹 Found {garbled_count} garbled titles (containing 'æ')")
+        print(f"🧹 Found {generic_count} generic titles (site name only)")
+
+        if garbled_count > 0 or generic_count > 0:
+            cursor.execute("""
+                UPDATE archive_records SET article_title = NULL
+                WHERE article_title LIKE '%æ%'
+                   OR (article_title LIKE '%明報新聞網%' AND LENGTH(article_title) < 50)
+            """)
+            conn.commit()
+            print(f"✅ Cleared {cursor.rowcount} bad titles\n")
 
     # Get articles with NULL titles
     cursor.execute("""

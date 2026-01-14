@@ -221,6 +221,23 @@ class MingPaoArchiver:
         Path("output").mkdir(exist_ok=True)
         Path("logs").mkdir(exist_ok=True)
 
+    def _decode_response(self, response) -> str:
+        """Decode response content with Big5 fallback for Ming Pao"""
+        # Try Big5 first for Ming Pao (they use Big5 encoding)
+        encodings = ["big5-hkscs", "big5", "utf-8", "latin-1"]
+
+        for encoding in encodings:
+            try:
+                text = response.content.decode(encoding)
+                # Verify it contains valid Chinese characters
+                if any("\u4e00" <= c <= "\u9fff" for c in text):
+                    return text
+            except (UnicodeDecodeError, LookupError):
+                continue
+
+        # Fallback to requests' auto-detection
+        return response.text
+
     def fetch_html_content(self, url: str, timeout: int = 15) -> Tuple[str, bool]:
         """Fetch HTML content with Wayback fallback"""
         try:
@@ -237,8 +254,10 @@ class MingPaoArchiver:
                     response = self._make_request(
                         "GET", wayback_url, timeout=timeout * 2, headers=headers
                     )
-                    if response.status_code == 200 and response.text.strip():
-                        return response.text, True
+                    if response.status_code == 200:
+                        text = self._decode_response(response)
+                        if text.strip():
+                            return text, True
                 except Exception as e:
                     self.logger.debug(f"Wayback check failed: {url[:50]} - {str(e)}")
 
@@ -251,8 +270,10 @@ class MingPaoArchiver:
                         timeout=timeout / 2 if attempt == 0 else timeout,
                         headers=headers,
                     )
-                    if response.status_code == 200 and response.text.strip():
-                        return response.text, False
+                    if response.status_code == 200:
+                        text = self._decode_response(response)
+                        if text.strip():
+                            return text, False
                 except requests.exceptions.ConnectionError as e:
                     if "Connection reset by peer" in str(e) and attempt == 0:
                         self.logger.debug(
@@ -271,14 +292,28 @@ class MingPaoArchiver:
         return "", False
 
     def extract_title_from_html(self, html: str) -> str:
-        """Extract title with proper encoding handling"""
+        """Extract title from HTML (encoding handled by _decode_response)"""
         if not html:
             return ""
 
         try:
             import re
 
-            # Try og:title first
+            # Try article-title h3 first (Ming Pao specific)
+            # Handle whitespace/newlines around the title
+            article_title_match = re.search(
+                r'<h3[^>]*class="[^"]*article-title[^"]*"[^>]*>(.*?)</h3>',
+                html,
+                re.IGNORECASE | re.DOTALL,
+            )
+            if article_title_match:
+                title = article_title_match.group(1)
+                title = re.sub(r"<[^>]+>", "", title)  # Remove any inner HTML tags
+                title = re.sub(r"[\s\n\r\t]+", " ", title).strip()  # Normalize all whitespace
+                if title and len(title) > 5:  # Ensure we have actual content
+                    return self.keyword_filter.normalize_cjkv_text(title)
+
+            # Try og:title
             og_title_match = re.search(
                 r'<meta\s+property="og:title"\s+content="([^"]+)"',
                 html,
@@ -286,29 +321,18 @@ class MingPaoArchiver:
             )
             if og_title_match:
                 title = og_title_match.group(1)
-                return self.keyword_filter.normalize_cjkv_text(title.strip())
+                # Skip generic site title
+                if "明報新聞網" not in title or len(title) > 50:
+                    return self.keyword_filter.normalize_cjkv_text(title.strip())
 
             # Fallback to <title> tag
             title_match = re.search(r"<title[^>]*>([^<]+)</title>", html, re.IGNORECASE)
             if title_match:
                 title = title_match.group(1)
                 title = re.sub(r"\s+", " ", title).strip()
-
-                # Try different encodings for Traditional Chinese
-                encodings_to_try = ["big5-hkscs", "big5", "utf-8"]
-
-                for enc in encodings_to_try:
-                    try:
-                        decoded = title.encode("ISO-8859-1").decode(enc)
-                        normalized = self.keyword_filter.normalize_cjkv_text(decoded)
-                        if normalized and any(
-                            "\u4e00" <= c <= "\u9fff" for c in normalized
-                        ):
-                            return normalized
-                    except (UnicodeDecodeError, LookupError):
-                        continue
-
-                return self.keyword_filter.normalize_cjkv_text(title)
+                # Skip generic site title
+                if "明報新聞網" not in title or len(title) > 50:
+                    return self.keyword_filter.normalize_cjkv_text(title)
 
         except Exception as e:
             self.logger.debug(f"Title extraction failed: {str(e)}")
