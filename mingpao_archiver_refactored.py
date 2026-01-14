@@ -503,6 +503,16 @@ class MingPaoArchiver:
                 else:
                     failed += 1
             else:
+                # Extract title for all articles (prefer Wayback if available)
+                title = None
+                try:
+                    html, _ = self.fetch_html_content(url)
+                    if html:
+                        title = self.extract_title_from_html(html)
+                        self.logger.debug(f"Extracted title: {title[:50] if title else 'None'}...")
+                except Exception as e:
+                    self.logger.debug(f"Failed to extract title for {url}: {str(e)}")
+
                 # Save regular result
                 article_record = ArchiveRecord(
                     article_url=url,
@@ -512,6 +522,7 @@ class MingPaoArchiver:
                     http_status=result.http_status,
                     error_message=result.error,
                     checked_wayback=True,
+                    article_title=title,
                 )
                 self.repository.save_archive_record(article_record)
 
