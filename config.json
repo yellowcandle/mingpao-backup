@@ -1,0 +1,50 @@
+{
+  "database": {
+    "path": "hkga_archive.db"
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "logs/hkga_archiver.log"
+  },
+  "archiving": {
+    "rate_limit_delay": 3,
+    "verify_first": false,
+    "timeout": 30,
+    "max_retries": 3,
+    "retry_delay": 10
+  },
+  "daily_limit": 2000,
+  "date_range": {
+    "start": "2025-01-01",
+    "end": "2025-01-31"
+  },
+  "use_newspaper": false,
+  "use_newspaper4k_titles": false,
+  "use_index_page": true,
+  "parallel": {
+    "enabled": false,
+    "max_workers": 2,
+    "rate_limit_delay": 3.0
+  },
+  "keywords": {
+    "enabled": false,
+    "terms": [
+      "香港",
+      "政治",
+      "中國",
+      "台灣",
+      "國安法",
+      "選舉",
+      "示威",
+      "黎智英"
+    ],
+    "case_sensitive": false,
+    "language": "zh-TW",
+    "script": "traditional",
+    "normalization": "NFC",
+    "logic": "or",
+    "search_content": false,
+    "parallel_workers": 2,
+    "wayback_first": true
+  }
+}

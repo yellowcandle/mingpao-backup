@@ -1,0 +1,46 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+venv/
+
+# Environment variables
+.env
+.env.local
+
+# Database files
+*.db
+*.db-journal
+
+# Logs
+logs/
+*.log
+
+# Output files
+output/
+*.csv
+
+# IDE
+.idea/
+.vscode/
+*.sublime-*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+
+# Test/debug files
+typos_report.txt
+
+# Ruff cache
+.ruff_cache/
