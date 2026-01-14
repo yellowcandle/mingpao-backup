@@ -80,66 +80,67 @@ def archive_articles(request_data: dict):
 
     # Update config to use persistent volume
     config_path = Path("/root/config.json")
-    with open(config_path, 'r') as f:
+    with open(config_path, "r") as f:
         config = json.load(f)
 
     # Override paths to use volume
-    config['database']['path'] = '/data/hkga_archive.db'
-    config['logging']['file'] = '/data/logs/hkga_archiver.log'
+    config["database"]["path"] = "/data/hkga_archive.db"
+    config["logging"]["file"] = "/data/logs/hkga_archiver.log"
 
     # Create logs directory in volume
     import os
-    os.makedirs('/data/logs', exist_ok=True)
+
+    os.makedirs("/data/logs", exist_ok=True)
 
     # Save modified config
-    temp_config = '/tmp/modal_config.json'
-    with open(temp_config, 'w') as f:
+    temp_config = "/tmp/modal_config.json"
+    with open(temp_config, "w") as f:
         json.dump(config, f)
 
     # Create archiver instance
     archiver = MingPaoHKGAArchiver(temp_config)
 
     # Apply request parameters
-    mode = request_data.get('mode', 'date')
+    mode = request_data.get("mode", "date")
 
-    if request_data.get('keywords'):
-        archiver.config['keywords']['enabled'] = True
-        archiver.config['keywords']['terms'] = request_data['keywords']
+    if request_data.get("keywords"):
+        archiver.config["keywords"]["enabled"] = True
+        archiver.config["keywords"]["terms"] = request_data["keywords"]
 
-    if request_data.get('daily_limit'):
-        archiver.config['daily_limit'] = request_data['daily_limit']
+    if request_data.get("daily_limit"):
+        archiver.config["daily_limit"] = request_data["daily_limit"]
 
     # Execute archiving
     try:
-        if mode == 'date':
-            if 'date' not in request_data:
+        if mode == "date":
+            if "date" not in request_data:
                 return {
                     "status": "error",
-                    "error": "Missing 'date' parameter for mode='date'"
+                    "error": "Missing 'date' parameter for mode='date'",
                 }, 400
 
-            date = parse_date(request_data['date'])
+            date = parse_date(request_data["date"])
             result = archiver.archive_date(date)
 
-        elif mode == 'range':
-            if 'start' not in request_data or 'end' not in request_data:
+        elif mode == "range":
+            if "start" not in request_data or "end" not in request_data:
                 return {
                     "status": "error",
-                    "error": "Missing 'start' or 'end' parameter for mode='range'"
+                    "error": "Missing 'start' or 'end' parameter for mode='range'",
                 }, 400
 
-            start = parse_date(request_data['start'])
-            end = parse_date(request_data['end'])
+            start = parse_date(request_data["start"])
+            end = parse_date(request_data["end"])
             result = archiver.archive_date_range(start, end)
 
-        elif mode == 'backdays':
-            if 'backdays' not in request_data:
+        elif mode == "backdays":
+            if "backdays" not in request_data:
                 return {
                     "status": "error",
-                    "error": "Missing 'backdays' parameter for mode='backdays'"
+                    "error": "Missing 'backdays' parameter for mode='backdays'",
                 }, 400
 
-            backdays = request_data['backdays']
+            backdays = request_data["backdays"]
             end_date = datetime.now()
             start_date = end_date - timedelta(days=backdays - 1)
             result = archiver.archive_date_range(start_date, end_date)
@@ -148,7 +149,7 @@ def archive_articles(request_data: dict):
             return {
                 "status": "error",
                 "error": f"Invalid mode: {mode}",
-                "valid_modes": ["date", "range", "backdays"]
+                "valid_modes": ["date", "range", "backdays"],
             }, 400
 
         # Commit volume changes
@@ -159,15 +160,16 @@ def archive_articles(request_data: dict):
             "status": "success",
             "mode": mode,
             "result": result,
-            "stats": archiver.stats
+            "stats": archiver.stats,
         }
 
     except Exception as e:
         import traceback
+
         return {
             "status": "error",
             "error": str(e),
-            "traceback": traceback.format_exc()
+            "traceback": traceback.format_exc(),
         }, 500
 
     finally:
@@ -192,13 +194,14 @@ def get_stats():
     try:
         # Check if database exists
         import os
+
         if not os.path.exists(db_path):
             return {
                 "status": "empty",
                 "message": "No database found. Run archiving first.",
                 "total_articles": 0,
                 "successful": 0,
-                "days_processed": 0
+                "days_processed": 0,
             }
 
         conn = sqlite3.connect(db_path)
@@ -245,52 +248,226 @@ def get_stats():
             "total_articles": total,
             "successful": success,
             "failed": failed,
-            "success_rate": f"{(success/total*100):.1f}%" if total > 0 else "0%",
+            "success_rate": f"{(success / total * 100):.1f}%" if total > 0 else "0%",
             "days_processed": days,
             "recent_archives": [
-                {
-                    "url": r[0],
-                    "date": r[1],
-                    "status": r[2],
-                    "title": r[3]
-                }
+                {"url": r[0], "date": r[1], "status": r[2], "title": r[3]}
                 for r in recent
             ],
             "recent_days": [
-                {
-                    "date": d[0],
-                    "found": d[1],
-                    "archived": d[2],
-                    "failed": d[3]
-                }
+                {"date": d[0], "found": d[1], "archived": d[2], "failed": d[3]}
                 for d in recent_days
-            ]
+            ],
         }
 
     except Exception as e:
         import traceback
+
         return {
             "status": "error",
             "error": str(e),
-            "traceback": traceback.format_exc()
+            "traceback": traceback.format_exc(),
         }, 500
 
 
-@app.local_entrypoint()
-def main():
+@app.function(
+    image=image,
+    volumes={"/data": volume},
+    timeout=86400,  # 24 hours
+    cpu=1,
+    schedule=modal.Cron("0 6 * * *"),  # Run daily at 6 AM UTC
+)
+def daily_archive():
     """
-    Local testing entry point
+    Scheduled daily archiving job - runs automatically at 6 AM UTC
+
+    Archives the last 3 days to catch any missed articles
+    """
+    import json
+    from datetime import datetime, timedelta
+
+    sys.path.insert(0, "/root")
+    from mingpao_hkga_archiver import MingPaoHKGAArchiver
+
+    # Setup config for volume
+    config_path = Path("/root/config.json")
+    with open(config_path, "r") as f:
+        config = json.load(f)
+
+    config["database"]["path"] = "/data/hkga_archive.db"
+    config["logging"]["file"] = "/data/logs/hkga_archiver.log"
+
+    import os
+
+    os.makedirs("/data/logs", exist_ok=True)
+
+    temp_config = "/tmp/modal_config.json"
+    with open(temp_config, "w") as f:
+        json.dump(config, f)
+
+    archiver = MingPaoHKGAArchiver(temp_config)
+
+    try:
+        # Archive last 3 days
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=2)
+
+        print(
+            f"Daily archive: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+        )
+        result = archiver.archive_date_range(start_date, end_date)
+
+        volume.commit()
+        print(f"Daily archive complete: {archiver.stats}")
+        return result
+
+    finally:
+        archiver.close()
+
+
+@app.function(
+    image=image,
+    volumes={"/data": volume},
+    timeout=86400,  # 24 hours max (Modal limit)
+    cpu=1,
+)
+def batch_historical_archive(start_date: str, end_date: str):
+    """
+    Long-running batch archive for historical data
+
+    Runs entirely in the cloud - continues even if your machine is off.
 
     Usage:
+        modal run modal_app.py::batch_historical_archive --start-date 2013-01-01 --end-date 2026-01-15
+
+    Or trigger from Python:
+        batch_historical_archive.spawn("2013-01-01", "2026-01-15")
+    """
+    import json
+    from datetime import datetime, timedelta
+
+    sys.path.insert(0, "/root")
+    from mingpao_hkga_archiver import MingPaoHKGAArchiver, parse_date
+
+    # Setup config
+    config_path = Path("/root/config.json")
+    with open(config_path, "r") as f:
+        config = json.load(f)
+
+    config["database"]["path"] = "/data/hkga_archive.db"
+    config["logging"]["file"] = "/data/logs/hkga_archiver.log"
+
+    import os
+
+    os.makedirs("/data/logs", exist_ok=True)
+
+    temp_config = "/tmp/modal_config.json"
+    with open(temp_config, "w") as f:
+        json.dump(config, f)
+
+    archiver = MingPaoHKGAArchiver(temp_config)
+
+    try:
+        start = parse_date(start_date)
+        end = parse_date(end_date)
+
+        print(f"=" * 60)
+        print(f"BATCH HISTORICAL ARCHIVE")
+        print(f"Start: {start.strftime('%Y-%m-%d')}")
+        print(f"End: {end.strftime('%Y-%m-%d')}")
+        print(f"=" * 60)
+
+        # Process month by month
+        current = start
+        month_count = 0
+
+        while current <= end:
+            # Calculate month end
+            if current.month == 12:
+                month_end = datetime(current.year + 1, 1, 1) - timedelta(days=1)
+            else:
+                month_end = datetime(current.year, current.month + 1, 1) - timedelta(
+                    days=1
+                )
+
+            # Don't go past end date
+            if month_end > end:
+                month_end = end
+
+            print(
+                f"\n[Month {month_count + 1}] Processing {current.strftime('%Y-%m')}..."
+            )
+
+            try:
+                result = archiver.archive_date_range(current, month_end)
+                volume.commit()  # Commit after each month
+                print(
+                    f"  Archived: {result.get('archived', 0)}, Failed: {result.get('failed', 0)}"
+                )
+            except Exception as e:
+                print(f"  ERROR: {e}")
+
+            # Move to next month
+            if current.month == 12:
+                current = datetime(current.year + 1, 1, 1)
+            else:
+                current = datetime(current.year, current.month + 1, 1)
+
+            month_count += 1
+
+        print(f"\n" + "=" * 60)
+        print(f"BATCH COMPLETE: Processed {month_count} months")
+        print(f"Stats: {archiver.stats}")
+        print(f"=" * 60)
+
+        return {
+            "status": "complete",
+            "months_processed": month_count,
+            "stats": archiver.stats,
+        }
+
+    finally:
+        archiver.close()
+
+
+@app.local_entrypoint()
+def main(
+    start_date: str = None,
+    end_date: str = None,
+):
+    """
+    Local entry point - can trigger batch archive or run tests
+
+    Usage:
+        # Quick test (today's date)
         modal run modal_app.py
+
+        # Batch historical archive (runs in cloud, detached)
+        modal run modal_app.py --start-date 2013-01-01 --end-date 2026-01-15
     """
     import json
 
-    # Test with a sample request
-    test_request = {
-        "mode": "date",
-        "date": "2026-01-13"
-    }
+    if start_date and end_date:
+        # Spawn batch job in the cloud (detached)
+        print("=" * 60)
+        print("SPAWNING BATCH ARCHIVE IN CLOUD")
+        print(f"Start: {start_date}")
+        print(f"End: {end_date}")
+        print("=" * 60)
+        print("\nThis job will continue running even if you close your terminal.")
+        print("Monitor progress at: https://modal.com/apps")
+        print(
+            "Check stats at: https://yellowcandle--mingpao-archiver-get-stats.modal.run"
+        )
+        print()
+
+        # Use .spawn() for detached execution
+        call = batch_historical_archive.spawn(start_date, end_date)
+        print(f"Job spawned with ID: {call.object_id}")
+        return
+
+    # Default: quick test
+    test_request = {"mode": "date", "date": "2026-01-13"}
 
     print("=" * 60)
     print("Testing Modal archiver locally")
