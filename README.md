@@ -2,39 +2,65 @@
 
 > 將明報加拿大網站的港聞文章存檔至 Internet Archive Wayback Machine，保存香港歷史新聞記錄
 
-## 🤝 Help Us Archive - Volunteer Guide
+## 🚀 Quick Start with Docker
 
-We need volunteers to help archive 157,000+ historical articles (2013-2026). Here's how you can help:
+The easiest way to run the archiver is using Docker.
+
+### 1. Setup
+```bash
+# Clone the repository
+git clone https://github.com/yellowcandle/mingpao-backup.git
+cd mingpao-backup
+
+# Build the image
+docker build -t mingpao-archiver .
+
+# Create data and logs directories
+mkdir -p data logs
+```
+
+### 2. Basic Usage
+```bash
+# Archive a single date
+docker run -v $(pwd)/data:/data -v $(pwd)/logs:/logs \
+  mingpao-archiver --date 2025-06-15
+
+# Archive a date range
+docker run -v $(pwd)/data:/data -v $(pwd)/logs:/logs \
+  mingpao-archiver --start 2025-01-01 --end 2025-01-31
+
+# Archive with keywords (Traditional Chinese)
+docker run -v $(pwd)/data:/data -v $(pwd)/logs:/logs \
+  mingpao-archiver --enable-keywords --keyword "香港" --keyword "政治" --backdays 7
+```
+
+### 3. Check Progress
+```bash
+# View archive statistics from the database
+docker-compose run stats
+
+# Monitor logs
+tail -f logs/hkga_archiver.log
+```
+
+## 🤝 Volunteer Guide - Help Us Archive
+
+We need volunteers to help archive 157,000+ historical articles (2013-2026).
 
 ### Step 1: Claim a Date Range
-
 1. Check [existing claims](https://github.com/yellowcandle/mingpao-backup/issues?q=label%3Aarchive-claim)
-2. [Create a new issue](https://github.com/yellowcandle/mingpao-backup/issues/new?template=archive-claim.yml) to claim your quarter
+2. [Create a new issue](https://github.com/yellowcandle/mingpao-backup/issues/new?template=archive-claim.yml) to claim your quarter (e.g., 2015 Q1)
 3. Wait for confirmation before starting
 
 ### Step 2: Run the Archiver
-
+Follow the [Quick Start](#-quick-start-with-docker) instructions to setup, then run your claimed range:
 ```bash
-# Clone and build
-git clone https://github.com/yellowcandle/mingpao-backup.git
-cd mingpao-backup
-docker build -t mingpao-archiver .
-
-# Create directories
-mkdir -p data logs
-
-# Archive your claimed quarter (example: 2015 Q1)
 docker run -v $(pwd)/data:/data -v $(pwd)/logs:/logs \
   mingpao-archiver --start 2015-01-01 --end 2015-03-31
 ```
 
 ### Step 3: Report Results
-
-Update your GitHub issue with:
-- Articles archived (check with `docker-compose run stats`)
-- Any errors encountered
-
-**Estimated time**: ~6-8 hours per quarter (runs unattended)
+Update your GitHub issue with the summary from `docker-compose run stats`.
 
 ---
 
@@ -47,29 +73,29 @@ Track overall progress: https://yellowcandle--mingpao-archiver-dashboard.modal.r
 | **Dashboard** | https://yellowcandle--mingpao-archiver-dashboard.modal.run |
 | **Stats API** | https://yellowcandle--mingpao-archiver-get-stats.modal.run |
 
-## 🐳 Docker Commands
+## 🛠️ CLI Options
 
-```bash
-# Archive single date
-docker run -v $(pwd)/data:/data mingpao-archiver --date 2015-06-15
+You can pass these flags to the docker command:
 
-# Archive date range
-docker run -v $(pwd)/data:/data mingpao-archiver --start 2015-01-01 --end 2015-03-31
-
-# Check your progress
-docker-compose run stats
-
-# View logs
-tail -f logs/hkga_archiver.log
-```
+| Flag | Description |
+|------|-------------|
+| `--date YYYY-MM-DD` | Archive a single date |
+| `--start YYYY-MM-DD` | Start date for range |
+| `--end YYYY-MM-DD` | End date for range |
+| `--backdays N` | Archive last N days from today |
+| `--enable-keywords` | Filter articles by keywords |
+| `--keyword "TERM"` | Add a keyword (repeat for multiple) |
+| `--search-content` | Search full article body (slower) |
+| `--daily-limit N` | Limit number of articles per run |
 
 ## 📋 Features
 
-- 🐳 **Docker Support**: Easy local running for volunteers
-- 🌐 **Cloud Dashboard**: Real-time progress at Modal
-- 📅 **Date Range**: Archive any period from 2013-2026
-- 💾 **Resume Support**: Safe to stop and restart
-- ⏱️ **Rate Limiting**: Respectful to Wayback Machine
+- 🐳 **Docker Native**: Primary way to run, ensuring environment consistency.
+- 🔍 **Keyword Filtering**: Support for Traditional Chinese keyword matching (Title or Body).
+- 📅 **Flexible Ranges**: Archive specific dates, ranges, or rolling windows (backdays).
+- 💾 **State Persistence**: SQLite database tracks progress to avoid duplicate work.
+- ⏱️ **Respectful Archiving**: Built-in rate limiting for Wayback Machine.
+- 🌐 **Cloud Dashboard**: Syncs results to a [live dashboard](https://yellowcandle--mingpao-archiver-dashboard.modal.run).
 
 ## 🐛 Troubleshooting
 
@@ -78,6 +104,18 @@ tail -f logs/hkga_archiver.log
 | 403 errors | Wait 1 hour, then retry |
 | Connection reset | Automatic retry, just wait |
 | Slow progress | Normal - ~40 articles/day per date |
+
+## 🐍 Native Installation (Advanced)
+
+If you prefer to run the archiver natively without Docker, we recommend using [uv](https://github.com/astral-sh/uv):
+
+```bash
+# Install dependencies
+uv sync
+
+# Run the archiver
+uv run python mingpao_hkga_archiver.py --backdays 7
+```
 
 ## 📄 License
 
