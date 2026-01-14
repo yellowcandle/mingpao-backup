@@ -28,7 +28,9 @@
       "Bash(git push:*)",
       "Bash(git branch:*)",
       "Bash(modal run:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(grep:*)",
+      "Bash(timeout 30 uv run:*)"
     ]
   }
 }
