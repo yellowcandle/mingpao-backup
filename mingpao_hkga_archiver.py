@@ -110,6 +110,9 @@ class MingPaoHKGAArchiver:
             "already_archived": 0,
             "rate_limited": 0,
             "not_found": 0,
+            "unknown": 0,
+            "timeout": 0,
+            "error": 0,
         }
         self.stats_lock = threading.Lock()
 
@@ -919,7 +922,7 @@ class MingPaoHKGAArchiver:
         except Exception as e:
             self.logger.error(f"Error: {url} - {str(e)}")
             with self.stats_lock:
-                self.stats["failed"] += 1
+                self.stats["error"] += 1
             return {
                 "status": "error",
                 "wayback_url": None,
