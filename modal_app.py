@@ -1028,6 +1028,159 @@ def dashboard():
 @app.function(
     image=image,
     volumes={"/data": volume},
+    timeout=86400,  # 24 hours for large backfills
+    cpu=1,
+)
+def backfill_titles(batch_size: int = 100, rate_limit_delay: int = 3):
+    """
+    Backfill article titles for records with NULL titles
+
+    Extracts titles from Wayback Machine for articles that were archived
+    before the title extraction feature was implemented.
+
+    Args:
+        batch_size: Number of articles to process (default: 100)
+        rate_limit_delay: Seconds between requests (default: 3)
+
+    Returns:
+        Dictionary with backfill statistics
+
+    Usage:
+        # Via Python
+        modal run modal_app.py::backfill_titles --batch-size 100
+
+        # Or trigger via spawn
+        backfill_titles.spawn(batch_size=500, rate_limit_delay=3)
+    """
+    import sqlite3
+    import sys
+    import time
+    from datetime import datetime
+
+    sys.path.insert(0, "/root")
+    from mingpao_archiver_refactored import MingPaoArchiver
+
+    db_path = "/data/hkga_archive.db"
+
+    print("=" * 60)
+    print("TITLE BACKFILL STARTED")
+    print(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Batch size: {batch_size}")
+    print(f"Rate limit: {rate_limit_delay}s")
+    print("=" * 60)
+
+    # Initialize archiver for title extraction
+    config_path = "/root/config.json"
+    import json
+    with open(config_path, "r") as f:
+        config = json.load(f)
+
+    config["database"]["path"] = db_path
+    temp_config = "/tmp/backfill_config.json"
+    with open(temp_config, "w") as f:
+        json.dump(config, f)
+
+    archiver = MingPaoArchiver(temp_config)
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # Get articles with NULL titles
+    cursor.execute("""
+        SELECT id, article_url, archive_date, status
+        FROM archive_records
+        WHERE article_title IS NULL
+        ORDER BY created_at DESC
+        LIMIT ?
+    """, (batch_size,))
+
+    articles = cursor.fetchall()
+    total = len(articles)
+
+    if total == 0:
+        print("\n✅ No articles need title backfill!")
+        conn.close()
+        archiver.close()
+        volume.commit()
+        return {
+            "status": "success",
+            "message": "No articles need backfill",
+            "processed": 0,
+            "updated": 0,
+            "failed": 0
+        }
+
+    print(f"\nFound {total} articles with NULL titles")
+    print("Starting title extraction...\n")
+
+    updated = 0
+    failed = 0
+
+    for i, (record_id, url, date, status) in enumerate(articles):
+        print(f"[{i+1}/{total}] Processing: {url}")
+
+        try:
+            # Fetch HTML and extract title
+            html, from_wayback = archiver.fetch_html_content(url, timeout=30)
+
+            if html:
+                title = archiver.extract_title_from_html(html)
+
+                if title:
+                    # Update database
+                    cursor.execute("""
+                        UPDATE archive_records
+                        SET article_title = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """, (title, record_id))
+                    conn.commit()
+
+                    updated += 1
+                    print(f"  ✅ Title: {title[:60]}...")
+                else:
+                    failed += 1
+                    print(f"  ⚠️ Could not extract title from HTML")
+            else:
+                failed += 1
+                print(f"  ❌ Could not fetch HTML")
+
+        except Exception as e:
+            failed += 1
+            print(f"  ❌ Error: {str(e)}")
+
+        # Rate limiting
+        if i < total - 1:
+            time.sleep(rate_limit_delay)
+
+        # Progress update every 10 articles
+        if (i + 1) % 10 == 0:
+            print(f"\nProgress: {i+1}/{total} processed, {updated} updated, {failed} failed\n")
+
+    conn.close()
+    archiver.close()
+    volume.commit()  # Persist changes
+
+    print("\n" + "=" * 60)
+    print("BACKFILL COMPLETED")
+    print(f"Total processed: {total}")
+    print(f"Titles updated: {updated}")
+    print(f"Failed: {failed}")
+    print(f"Success rate: {(updated/total*100):.1f}%")
+    print("=" * 60)
+
+    return {
+        "status": "success",
+        "processed": total,
+        "updated": updated,
+        "failed": failed,
+        "success_rate": f"{(updated/total*100):.1f}%"
+    }
+
+
+@app.function(
+    image=image,
+    volumes={"/data": volume},
     timeout=86400,  # 24 hours
     cpu=1,
     schedule=modal.Cron("0 6 * * *"),  # Run daily at 6 AM UTC
