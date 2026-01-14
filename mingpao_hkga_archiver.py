@@ -904,6 +904,72 @@ class MingPaoHKGAArchiver:
 
         except Exception as e:
             self.logger.error(f"💥 例外錯誤: {url} - {str(e)}")
+            import subprocess  # Import early for fallback
+
+            # Fallback: Try using internetarchive library if connection errors
+            if (
+                "Connection refused" in str(e)
+                or "ConnectionReset" in str(e)
+                or "Max retries exceeded" in str(e)
+                or "520" in str(e)
+            ):
+                self.logger.info(f"🔄 嘗試使用 IA 庫備援: {url}")
+                try:
+                    import subprocess
+
+                    # Use ia CLI save command as fallback
+                    result = subprocess.run(
+                        [
+                            "ia",
+                            "save",
+                            "--metadata",
+                            '{"title": "Ming Pao Article"}',
+                            url,
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+
+                    if result.returncode == 0:
+                        wayback_url = f"https://web.archive.org/web/2/{url}"
+                        self.logger.info(f"✅ 備援成功 (IA CLI): {url}")
+                        self.logger.info(f"   Wayback: {wayback_url}")
+                        with self.stats_lock:
+                            self.stats["successful"] += 1
+                        return {
+                            "status": "success",
+                            "wayback_url": wayback_url,
+                            "http_status": 200,
+                            "error": None,
+                        }
+                    else:
+                        self.logger.warning(f"⚠️  IA CLI 失敗: {result.stderr}")
+                        # Check if already exists
+                        exists_check = f"https://web.archive.org/web/2/{url}"
+                        check_resp = self._make_request(
+                            "GET",
+                            exists_check,
+                            timeout=config["timeout"],
+                            headers=headers,
+                        )
+                        if check_resp and check_resp.status_code == 200:
+                            with self.stats_lock:
+                                self.stats["already_archived"] += 1
+                            return {
+                                "status": "exists",
+                                "wayback_url": exists_check,
+                                "http_status": 200,
+                                "error": None,
+                            }
+
+                except subprocess.TimeoutExpired:
+                    self.logger.warning(f"⏱️  IA CLI 超時: {url}")
+                except FileNotFoundError:
+                    self.logger.warning(f"⚠️  IA CLI 未找到，跳過備援")
+                except Exception as fallback_error:
+                    self.logger.warning(f"⚠️  IA 備援錯誤: {str(fallback_error)}")
+
             with self.stats_lock:
                 self.stats["failed"] += 1
             return {
