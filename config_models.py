@@ -247,7 +247,12 @@ class ConfigValidator:
         Returns:
             Dictionary with validation results
         """
-        result = {"valid": False, "config": None, "errors": [], "warnings": []}
+        result: Dict[str, Any] = {
+            "valid": False,
+            "config": None,
+            "errors": [],
+            "warnings": [],
+        }
 
         try:
             config = MingPaoConfig.load_from_file(config_path)

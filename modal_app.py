@@ -20,6 +20,7 @@ Usage:
 import modal
 import sys
 from pathlib import Path
+from typing import Optional
 
 # Create Modal app
 app = modal.App("mingpao-archiver")
@@ -30,10 +31,11 @@ volume = modal.Volume.from_name("mingpao-db", create_if_missing=True)
 # Define container image with dependencies and local files
 image = (
     modal.Image.debian_slim(python_version="3.12")
-    .pip_install(
+    .uv_pip_install(
         "requests>=2.31.0",
         "newspaper4k>=0.9.0",
         "pydantic>=2.0.0",
+        "fastapi[standard]",
     )
     # Add local Python files into image
     .add_local_file("mingpao_hkga_archiver.py", "/root/mingpao_hkga_archiver.py")
@@ -465,8 +467,8 @@ def batch_historical_archive(start_date: str, end_date: str):
 
 @app.local_entrypoint()
 def main(
-    start_date: str = None,
-    end_date: str = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
 ):
     """
     Local entry point - can trigger batch archive or run tests

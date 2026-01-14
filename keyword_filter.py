@@ -13,7 +13,7 @@ Handles filtering articles by Traditional Chinese keywords:
 import unicodedata
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Callable
 import logging
 
 
@@ -30,7 +30,7 @@ class KeywordFilter:
     """
 
     def __init__(
-        self, fetch_content_func: callable, extract_title_func: callable, config: Dict
+        self, fetch_content_func: Callable, extract_title_func: Callable, config: Dict
     ):
         """
         Initialize keyword filter
@@ -307,7 +307,7 @@ class KeywordFilter:
         Returns:
             List of matching article data
         """
-        if not self.should_filter_url():
+        if not self.should_filter_url(urls[0] if urls else ""):
             return [{"url": url, "should_archive": True} for url in urls]
 
         terms = self.get_keywords()

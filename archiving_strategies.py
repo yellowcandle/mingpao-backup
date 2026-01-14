@@ -10,8 +10,7 @@ Provides interchangeable archiving strategies:
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Tuple, Optional
-from datetime import datetime
+from typing import List, Dict, Tuple, Optional, Any
 import logging
 
 
@@ -156,7 +155,7 @@ class ParallelStrategy(ArchivingStrategy):
         total = len(articles)
         logger = logging.getLogger(__name__)
 
-        def process_article(article: Dict) -> Tuple[str, bool, Optional[object]]:
+        def process_article(article: Dict) -> Tuple[str, bool, Optional[Any]]:
             """Worker function for processing single article"""
             url = article["url"]
 
@@ -183,11 +182,17 @@ class ParallelStrategy(ArchivingStrategy):
                 # Save result to database
                 article_record = repository.create_archive_record(
                     article_url=url,
-                    wayback_url=result.wayback_url if result else None,
+                    wayback_url=getattr(result, "wayback_url", None)
+                    if result
+                    else None,
                     archive_date=date_str,
                     status="success" if success else "failed",
-                    http_status=result.http_status if result else None,
-                    error_message=result.error if result else "Processing error",
+                    http_status=getattr(result, "http_status", None)
+                    if result
+                    else None,
+                    error_message=getattr(result, "error", "Processing error")
+                    if result
+                    else "Processing error",
                     checked_wayback=True,
                 )
                 repository.save_archive_record(article_record)
@@ -289,7 +294,9 @@ class StrategyFactory:
     """Factory for creating archiving strategies"""
 
     @staticmethod
-    def create_strategy(strategy_type: str, config: Dict = None) -> ArchivingStrategy:
+    def create_strategy(
+        strategy_type: str, config: Optional[Dict] = None
+    ) -> ArchivingStrategy:
         """
         Create appropriate archiving strategy
 

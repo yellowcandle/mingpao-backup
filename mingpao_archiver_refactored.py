@@ -88,7 +88,21 @@ class MingPaoArchiver:
         rate_limit_delay = self.config["archiving"]["rate_limit_delay"]
         self.rate_limiter = RateLimiter(delay=rate_limit_delay, max_burst=1)
 
-        # Initialize components
+        # Initialize statistics first
+        self.stats = {
+            "total_attempted": 0,
+            "successful": 0,
+            "failed": 0,
+            "already_archived": 0,
+            "rate_limited": 0,
+            "not_found": 0,
+            "unknown": 0,
+            "timeout": 0,
+            "error": 0,
+        }
+        self.stats_lock = threading.Lock()
+
+        # Initialize components that depend on stats
         self.url_generator = URLGenerator(self.BASE_URL, self._make_request)
         self.wayback_archiver = WaybackArchiver(
             make_request=self._make_request,
@@ -104,20 +118,6 @@ class MingPaoArchiver:
 
         # Setup directories
         self.setup_directories()
-
-        # Initialize statistics
-        self.stats = {
-            "total_attempted": 0,
-            "successful": 0,
-            "failed": 0,
-            "already_archived": 0,
-            "rate_limited": 0,
-            "not_found": 0,
-            "unknown": 0,
-            "timeout": 0,
-            "error": 0,
-        }
-        self.stats_lock = threading.Lock()
 
         self.logger.info("=" * 60)
         self.logger.info("明報加拿大港聞 (HK-GA) Wayback Machine 存檔工具 (Refactored)")
@@ -383,6 +383,7 @@ class MingPaoArchiver:
 
     def archive_date(self, target_date: datetime, mode: str = "all") -> Dict:
         """Archive articles for a single date"""
+        date_str = target_date.strftime("%Y%m%d")
         title_mode = f"{'關鍵詞' if mode == 'keywords' else ''}過濾"
 
         self.logger.info("=" * 60)
