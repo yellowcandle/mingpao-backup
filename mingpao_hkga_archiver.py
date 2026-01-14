@@ -60,7 +60,7 @@ class MingPaoHKGAArchiver:
     """明報港聞存檔主要類別"""
 
     WAYBACK_SAVE_URL = "https://web.archive.org/save/{url}"
-    BASE_URL = "http://www.mingpaocanada.com/tor"
+    BASE_URL = "https://www.mingpaocanada.com/tor"
 
     HK_GA_PREFIXES = [
         "gaa",
@@ -92,8 +92,18 @@ class MingPaoHKGAArchiver:
         "ghb",
         "ghc",
         "ghd",
+        "ghe",
+        "ghf",
         "gma",
         "gmb",
+        "gmc",
+        "gmd",
+        "gme",
+        "gmf",
+        "gmg",
+        "gza",
+        "gzb",
+        "gzc",
     ]
 
     def __init__(self, config_path="config.json"):
@@ -143,7 +153,17 @@ class MingPaoHKGAArchiver:
         """
         self.rate_limiter.acquire()
 
+        if "headers" not in kwargs:
+            kwargs["headers"] = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+        elif "User-Agent" not in kwargs["headers"]:
+            kwargs["headers"]["User-Agent"] = (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+
         method_upper = method.upper()
+
         if method_upper == "GET":
             return requests.get(url, **kwargs)
         elif method_upper == "POST":
@@ -306,26 +326,14 @@ class MingPaoHKGAArchiver:
         return self._generate_urls_bruteforce(target_date)
 
     def _generate_urls_from_index(self, target_date: datetime) -> List[str]:
-        """從索引頁爬取實際存在的文章 URL (推薦方法)
-
-        此方法比暴力生成更高效：
-        - 只返回真實存在的文章 (~30-40 篇/天)
-        - 無需驗證 URL 是否存在
-        - 不會產生 404 錯誤
-        - 自動發現新的 URL 模式
-        """
+        """從索引頁爬取實際存在的文章 URL (推薦方法)"""
         date_str = target_date.strftime("%Y%m%d")
         index_url = f"{self.BASE_URL}/htm/News/{date_str}/HK-GAindex_r.htm"
 
         try:
             self.logger.debug(f"從索引頁爬取: {index_url}")
             response = self._make_request(
-                "GET",
-                index_url,
-                timeout=self.config["archiving"]["timeout"],
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-                },
+                "GET", index_url, timeout=self.config["archiving"]["timeout"]
             )
 
             if response.status_code != 200:
@@ -349,9 +357,8 @@ class MingPaoHKGAArchiver:
                 if "index" in relative_path.lower():
                     continue
 
-                # Convert relative path to absolute URL
-                # ../../../htm/News/20260113/HK-gaa1_r.htm -> http://www.mingpaocanada.com/tor/htm/News/20260113/HK-gaa1_r.htm
-                absolute_url = relative_path.replace("../../../", f"{self.BASE_URL}/")
+                clean_path = relative_path.replace("../../../", "")
+                absolute_url = f"https://www.mingpaocanada.com/tor/{clean_path}"
                 article_urls.add(absolute_url)
 
             article_list = sorted(list(article_urls))
@@ -439,16 +446,23 @@ class MingPaoHKGAArchiver:
         return matched
 
     def check_wayback_exists(
-        self, url: str, timeout: int = 10
+        self, url: str, timeout: int = 15
     ) -> Tuple[bool, Optional[str]]:
-        """Check if URL exists in Wayback Machine, return (exists, wayback_url)"""
-        wayback_url = f"https://web.archive.org/web/2/{url}"
+        """Check if URL exists in Wayback Machine using Availability API"""
+        availability_url = f"https://archive.org/wayback/available?url={url}"
         try:
-            response = self._make_request("GET", wayback_url, timeout=timeout)
+            response = self._make_request("GET", availability_url, timeout=timeout)
             if response.status_code == 200:
-                return True, wayback_url
+                data = response.json()
+                snapshots = data.get("archived_snapshots", {})
+                if snapshots:
+                    closest = snapshots.get("closest", {})
+                    if closest.get("available") and closest.get("url"):
+                        return True, closest.get("url")
         except Exception as e:
-            self.logger.debug(f"Wayback check failed: {url[:50]} - {str(e)}")
+            self.logger.debug(
+                f"Wayback availability check failed: {url[:50]} - {str(e)}"
+            )
         return False, None
 
     def extract_title_from_html(self, html: str) -> str:
@@ -781,11 +795,7 @@ class MingPaoHKGAArchiver:
         return existing_urls
 
     def archive_to_wayback(self, url: str, retry_count=0) -> Dict:
-        """存檔單個 URL 到 Wayback Machine
-
-        Uses HTTP Wayback save API as primary method.
-        Uses internetarchive Python library for checking existing archives.
-        """
+        """存檔單個 URL 到 Wayback Machine"""
         with self.stats_lock:
             self.stats["total_attempted"] += 1
 
@@ -799,46 +809,29 @@ class MingPaoHKGAArchiver:
                 "http_status": None,
             }
 
-        # Check if already archived using internetarchive Python library
+        # Check if already archived
         self.logger.debug(f"📥 檢查是否已有存檔: {url}")
-        try:
-            import internetarchive as ia
-
-            # Search for existing archive of this URL
-            search_results = list(
-                ia.search_items(
-                    f"originalurl:{url}",
-                    fields=["identifier"],
-                    params={"limit": 1},
-                )
-            )
-
-            if search_results:
-                wayback_check = f"https://web.archive.org/web/2/{url}"
-                self.logger.info(f"⚡ 已有存檔: {url}")
-                self.logger.info(f"   Wayback: {wayback_check}")
-                with self.stats_lock:
-                    self.stats["already_archived"] += 1
-                return {
-                    "status": "exists",
-                    "wayback_url": wayback_check,
-                    "http_status": 200,
-                    "error": None,
-                }
-        except Exception as search_error:
-            self.logger.debug(f"搜尋存檔失敗，使用 HTTP: {search_error}")
+        exists, wayback_url = self.check_wayback_exists(url)
+        if exists:
+            self.logger.info(f"⚡ 已有存檔: {url}")
+            self.logger.info(f"   Wayback: {wayback_url}")
+            with self.stats_lock:
+                self.stats["already_archived"] += 1
+            return {
+                "status": "exists",
+                "wayback_url": wayback_url,
+                "http_status": 200,
+                "error": None,
+            }
 
         # Use HTTP Wayback save API
         self.logger.debug(f"🔄 使用 HTTP 存檔: {url}")
         wayback_target = self.WAYBACK_SAVE_URL.format(url=url)
 
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-
         try:
+            # We don't need to manually set headers here as _make_request does it
             response = self._make_request(
-                "POST", wayback_target, timeout=config["timeout"], headers=headers
+                "POST", wayback_target, timeout=config["timeout"]
             )
 
             if response.status_code == 200:
@@ -857,16 +850,15 @@ class MingPaoHKGAArchiver:
                         "error": None,
                     }
                 else:
-                    wayback_check = f"https://web.archive.org/web/2/{url}"
-                    check_resp = self._make_request(
-                        "GET", wayback_check, timeout=config["timeout"], headers=headers
-                    )
-                    if check_resp.status_code == 200:
+                    self.logger.debug(f"Save accepted for {url[:50]}, verifying...")
+                    time.sleep(2)
+                    exists, wayback_url = self.check_wayback_exists(url)
+                    if exists:
                         with self.stats_lock:
                             self.stats["successful"] += 1
                         return {
                             "status": "success",
-                            "wayback_url": wayback_check,
+                            "wayback_url": wayback_url,
                             "http_status": 200,
                             "error": None,
                         }
@@ -884,16 +876,13 @@ class MingPaoHKGAArchiver:
                 }
 
             # Try to check if archived despite non-200 status
-            wayback_check = f"https://web.archive.org/web/2/{url}"
-            check_resp = self._make_request(
-                "GET", wayback_check, timeout=config["timeout"], headers=headers
-            )
-            if check_resp.status_code == 200:
+            exists, wayback_url = self.check_wayback_exists(url)
+            if exists:
                 with self.stats_lock:
                     self.stats["already_archived"] += 1
                 return {
                     "status": "exists",
-                    "wayback_url": wayback_check,
+                    "wayback_url": wayback_url,
                     "http_status": 200,
                     "error": None,
                 }
@@ -930,7 +919,7 @@ class MingPaoHKGAArchiver:
             # SSL/Connection errors often indicate rate limiting or server issues
             if retry_count < config["max_retries"]:
                 # Use exponential backoff for connection issues
-                wait_time = config["retry_delay"] * (2 ** retry_count)
+                wait_time = config["retry_delay"] * (2**retry_count)
                 self.logger.warning(
                     f"🔌 連線錯誤，等待 {wait_time}s 後重試 {retry_count + 1}/{config['max_retries']}: {url}"
                 )
