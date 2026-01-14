@@ -211,13 +211,26 @@ def get_stats():
         cursor.execute("SELECT COUNT(*) FROM archive_records")
         total = cursor.fetchone()[0]
 
-        # Successful archives
-        cursor.execute("SELECT COUNT(*) FROM archive_records WHERE status='success'")
-        success = cursor.fetchone()[0]
+        # Count by status type
+        cursor.execute("""
+            SELECT status, COUNT(*) 
+            FROM archive_records 
+            GROUP BY status
+        """)
+        status_counts = dict(cursor.fetchall())
 
-        # Failed archives
-        cursor.execute("SELECT COUNT(*) FROM archive_records WHERE status='failed'")
-        failed = cursor.fetchone()[0]
+        # Successful = 'success' (newly archived) + 'exists' (already in Wayback)
+        success = status_counts.get("success", 0)
+        exists = status_counts.get("exists", 0)
+        archived_total = success + exists  # Total articles in Wayback
+
+        # Failed = all failure types
+        failed = status_counts.get("failed", 0)
+        error = status_counts.get("error", 0)
+        timeout = status_counts.get("timeout", 0)
+        rate_limited = status_counts.get("rate_limited", 0)
+        unknown = status_counts.get("unknown", 0)
+        failed_total = failed + error + timeout + rate_limited + unknown
 
         # Days processed
         cursor.execute("SELECT COUNT(*) FROM daily_progress")
@@ -246,10 +259,21 @@ def get_stats():
         return {
             "status": "success",
             "total_articles": total,
-            "successful": success,
-            "failed": failed,
-            "success_rate": f"{(success / total * 100):.1f}%" if total > 0 else "0%",
+            "archived": archived_total,  # success + exists
+            "failed": failed_total,  # all failure types
+            "success_rate": f"{(archived_total / total * 100):.1f}%"
+            if total > 0
+            else "0%",
             "days_processed": days,
+            "breakdown": {
+                "success": success,  # Newly archived this run
+                "exists": exists,  # Already in Wayback
+                "failed": failed,  # HTTP error
+                "error": error,  # Exception
+                "timeout": timeout,  # Timeout
+                "rate_limited": rate_limited,  # 403
+                "unknown": unknown,  # Unknown status
+            },
             "recent_archives": [
                 {"url": r[0], "date": r[1], "status": r[2], "title": r[3]}
                 for r in recent
