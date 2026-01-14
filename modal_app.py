@@ -883,6 +883,51 @@ def generate_trends_rows(trends) -> str:
     return html
 
 
+def generate_volunteer_guide() -> str:
+    """Generate the volunteer quick start guide section"""
+    return """
+        <section class="section">
+            <h2>🤝 Help Us Archive</h2>
+            <p style="margin-bottom: 16px; color: #9ca3af;">
+                Run a Docker container locally to help archive historical articles. Pick a missing date range above!
+            </p>
+
+            <div style="background: #1f2937; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                <h3 style="font-size: 0.9rem; color: #60a5fa; margin-bottom: 12px;">Quick Start</h3>
+                <pre style="background: #111827; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; line-height: 1.6;"><code style="color: #e5e7eb;"># Clone and build
+git clone https://github.com/yellowcandle/mingpao-backup.git
+cd mingpao-backup
+docker build -t mingpao-archiver .
+
+# Create data directories
+mkdir -p data logs
+
+# Archive a date range (example: 2015 Q1)
+docker run -v $(pwd)/data:/data -v $(pwd)/logs:/logs \\
+  mingpao-archiver --start 2015-01-01 --end 2015-03-31</code></pre>
+            </div>
+
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                <a href="https://github.com/yellowcandle/mingpao-backup/issues/new?template=archive-claim.yml"
+                   target="_blank"
+                   style="display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; background: #22c55e; color: white; text-decoration: none; border-radius: 6px; font-weight: 500;">
+                    📋 Claim a Date Range
+                </a>
+                <a href="https://github.com/yellowcandle/mingpao-backup/blob/main/CONTRIBUTING.md"
+                   target="_blank"
+                   style="display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; background: #374151; color: white; text-decoration: none; border-radius: 6px; font-weight: 500;">
+                    📖 Full Guide
+                </a>
+                <a href="https://github.com/yellowcandle/mingpao-backup"
+                   target="_blank"
+                   style="display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; background: #374151; color: white; text-decoration: none; border-radius: 6px; font-weight: 500;">
+                    ⭐ GitHub Repo
+                </a>
+            </div>
+        </section>
+    """
+
+
 def generate_coverage_section(coverage: dict) -> str:
     """Generate the date coverage section HTML"""
     if not coverage:
@@ -1015,6 +1060,9 @@ def build_dashboard_html(overall, breakdown, batches, recent, trends, timestamp,
 
         <!-- Archive Coverage -->
         {generate_coverage_section(coverage) if coverage else ''}
+
+        <!-- Volunteer Guide -->
+        {generate_volunteer_guide()}
 
         <!-- Active Batches -->
         {generate_batch_section(batches) if batches else ''}
