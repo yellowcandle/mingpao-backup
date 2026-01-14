@@ -802,13 +802,82 @@ class MingPaoHKGAArchiver:
     def archive_to_wayback(self, url: str, retry_count=0) -> Dict:
         """存檔單個 URL 到 Wayback Machine
 
-        Note: Rate limiting is now handled by _make_request() wrapper
+        Primary: Use internetarchive library
+        Fallback: Direct HTTP requests
         """
         with self.stats_lock:
             self.stats["total_attempted"] += 1
 
-        wayback_target = self.WAYBACK_SAVE_URL.format(url=url)
         config = self.config["archiving"]
+
+        # Primary method: Use internetarchive library
+        self.logger.debug(f"📥 嘗試 IA 存檔: {url}")
+        import subprocess
+        import json
+
+        try:
+            # Check if already exists using search
+            result = subprocess.run(
+                ["ia", "search", url, "--field", "identifier", "--limit", "1"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if result.returncode == 0 and result.stdout.strip():
+                # Already exists
+                wayback_check = f"https://web.archive.org/web/2/{url}"
+                self.logger.info(f"⚡ 已有存檔 (IA): {url}")
+                self.logger.info(f"   Wayback: {wayback_check}")
+                with self.stats_lock:
+                    self.stats["already_archived"] += 1
+                return {
+                    "status": "exists",
+                    "wayback_url": wayback_check,
+                    "http_status": 200,
+                    "error": None,
+                }
+
+            # Try to save using IA
+            metadata = {
+                "title": "Ming Pao Canada Article",
+                "description": f"Archived from {url}",
+                "subject": "mingpao",
+                "language": "chi",
+            }
+
+            result = subprocess.run(
+                ["ia", "save", "--metadata", json.dumps(metadata), url],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+
+            if result.returncode == 0:
+                wayback_url = f"https://web.archive.org/web/2/{url}"
+                self.logger.info(f"✅ 存檔成功 (IA): {url}")
+                self.logger.info(f"   Wayback: {wayback_url}")
+                with self.stats_lock:
+                    self.stats["successful"] += 1
+                return {
+                    "status": "success",
+                    "wayback_url": wayback_url,
+                    "http_status": 200,
+                    "error": None,
+                }
+            else:
+                self.logger.warning(f"⚠️  IA save failed: {result.stderr}")
+
+        except subprocess.TimeoutExpired:
+            self.logger.warning(f"⏱️  IA save timeout: {url}")
+        except FileNotFoundError:
+            self.logger.warning(f"⚠️  IA CLI 未找到，使用 HTTP 備援")
+        except Exception as ia_error:
+            self.logger.warning(f"⚠️  IA 錯誤: {str(ia_error)}")
+
+        # Fallback: Direct HTTP requests
+        self.logger.debug(f"🔄 使用 HTTP 備援: {url}")
+        wayback_target = self.WAYBACK_SAVE_URL.format(url=url)
 
         # Set User-Agent header for Wayback requests
         headers = {
