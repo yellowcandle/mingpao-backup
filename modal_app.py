@@ -1537,6 +1537,164 @@ def batch_historical_archive(start_date: str, end_date: str):
         archiver.close()
 
 
+@app.function(
+    image=image,
+    volumes={"/data": volume},
+    timeout=86400,  # 24 hours max
+)
+def sync_from_wayback(start_date: str, end_date: str, rate_limit_delay: float = 0.5):
+    """
+    Sync archive status from Wayback Machine without re-archiving.
+
+    Checks which URLs are already in Wayback and updates our database.
+    This populates the dashboard with accurate coverage data.
+
+    Usage:
+        modal run modal_app.py::sync_from_wayback --start-date 2024-01-01 --end-date 2024-12-31
+
+    Args:
+        start_date: Start date (YYYY-MM-DD)
+        end_date: End date (YYYY-MM-DD)
+        rate_limit_delay: Seconds between API requests (default 0.5)
+    """
+    import sqlite3
+    import requests
+    import time
+    from datetime import datetime, timedelta
+
+    # Parse dates
+    start = datetime.strptime(start_date, "%Y-%m-%d")
+    end = datetime.strptime(end_date, "%Y-%m-%d")
+
+    db_path = "/data/hkga_archive.db"
+
+    # Initialize database
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # Ensure table exists
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS archive_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            article_url TEXT UNIQUE NOT NULL,
+            wayback_url TEXT,
+            archive_date TEXT,
+            status TEXT DEFAULT 'pending',
+            http_status INTEGER,
+            error_message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            matched_keywords TEXT,
+            checked_wayback INTEGER DEFAULT 0,
+            title_search_only INTEGER DEFAULT 0,
+            article_title TEXT
+        )
+    """)
+    conn.commit()
+
+    # URL prefixes for HK-GA articles
+    HK_GA_PREFIXES = [
+        "gaa", "gab", "gac", "gad", "gae", "gaf", "gag",
+        "gba", "gbb", "gbc", "gbd", "gbe",
+        "gca", "gcb", "gcc", "gcd",
+        "gda", "gdb", "gdc",
+        "gha", "ghb", "ghc",
+        "gma", "gmb", "gmc",
+        "gna", "gnb", "gnc",
+        "goa", "gob", "goc",
+    ]
+
+    print("=" * 60)
+    print("SYNC FROM WAYBACK MACHINE")
+    print(f"Date range: {start_date} to {end_date}")
+    print("=" * 60)
+
+    stats = {"checked": 0, "found": 0, "not_found": 0, "errors": 0, "skipped": 0}
+    current_date = start
+
+    while current_date <= end:
+        date_str = current_date.strftime("%Y%m%d")
+        date_display = current_date.strftime("%Y-%m-%d")
+        day_found = 0
+        day_checked = 0
+
+        # Generate URLs for this date
+        for prefix in HK_GA_PREFIXES:
+            for num in range(1, 20):  # 1-19 per prefix
+                url = f"http://www.mingpaocanada.com/tor/htm/News/{date_str}/HK-{prefix}{num}_r.htm"
+
+                # Check if already in database with success/exists status
+                cursor.execute(
+                    "SELECT status FROM archive_records WHERE article_url = ?",
+                    (url,)
+                )
+                existing = cursor.fetchone()
+                if existing and existing[0] in ("success", "exists"):
+                    stats["skipped"] += 1
+                    continue
+
+                # Check Wayback availability
+                try:
+                    api_url = f"https://archive.org/wayback/available?url={url}"
+                    response = requests.get(api_url, timeout=10)
+                    data = response.json()
+
+                    day_checked += 1
+                    stats["checked"] += 1
+
+                    snapshots = data.get("archived_snapshots", {})
+                    closest = snapshots.get("closest", {})
+
+                    if closest.get("available"):
+                        wayback_url = closest.get("url", "")
+                        timestamp = closest.get("timestamp", "")
+
+                        # Insert or update record
+                        cursor.execute("""
+                            INSERT INTO archive_records (article_url, wayback_url, archive_date, status, checked_wayback)
+                            VALUES (?, ?, ?, 'exists', 1)
+                            ON CONFLICT(article_url) DO UPDATE SET
+                                wayback_url = excluded.wayback_url,
+                                status = 'exists',
+                                checked_wayback = 1,
+                                updated_at = CURRENT_TIMESTAMP
+                        """, (url, wayback_url, date_str))
+
+                        day_found += 1
+                        stats["found"] += 1
+                    else:
+                        stats["not_found"] += 1
+
+                    time.sleep(rate_limit_delay)
+
+                except Exception as e:
+                    stats["errors"] += 1
+                    print(f"  Error checking {url}: {e}")
+                    time.sleep(1)  # Longer delay on error
+
+        conn.commit()
+        volume.commit()
+
+        if day_checked > 0:
+            print(f"  {date_display}: checked {day_checked}, found {day_found} in Wayback")
+
+        current_date += timedelta(days=1)
+
+    conn.close()
+    volume.commit()
+
+    print("\n" + "=" * 60)
+    print("SYNC COMPLETE")
+    print(f"  Checked: {stats['checked']}")
+    print(f"  Found in Wayback: {stats['found']}")
+    print(f"  Not found: {stats['not_found']}")
+    print(f"  Skipped (already synced): {stats['skipped']}")
+    print(f"  Errors: {stats['errors']}")
+    print("=" * 60)
+
+    return stats
+
+
 @app.local_entrypoint()
 def main(
     start_date: Optional[str] = None,
