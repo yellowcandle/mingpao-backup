@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+.eggs/
+*.egg-info/
+*.egg
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Local data (will be mounted as volumes)
+data/
+logs/
+*.db
+*.db-journal
+
+# Build artifacts
+dist/
+build/
+*.whl
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Misc
+.DS_Store
+*.log
+.env
+.env.local
+
+# Modal (not needed in Docker)
+modal_app.py

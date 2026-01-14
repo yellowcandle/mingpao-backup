@@ -1,0 +1,70 @@
+name: Claim Archive Date Range
+description: Claim a date range to archive using Docker
+title: "[CLAIM] Archive YYYY-QN (e.g., 2015-Q1)"
+labels: ["archive-claim", "help wanted"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Claim a Date Range for Archiving
+
+        Thank you for helping archive Ming Pao Hong Kong news! Please fill out this form to claim a date range.
+
+        **Before claiming:**
+        - Check existing issues to avoid duplicate work
+        - Each quarter (3 months) is a good chunk size
+
+  - type: dropdown
+    id: year
+    attributes:
+      label: Year
+      description: Which year will you archive?
+      options:
+        - "2013"
+        - "2014"
+        - "2015"
+        - "2016"
+        - "2017"
+        - "2018"
+        - "2019"
+        - "2020"
+        - "2021"
+        - "2022"
+        - "2023"
+        - "2024"
+        - "2025"
+        - "2026"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: quarter
+    attributes:
+      label: Quarter
+      description: Which quarter will you archive?
+      options:
+        - "Q1 (Jan-Mar)"
+        - "Q2 (Apr-Jun)"
+        - "Q3 (Jul-Sep)"
+        - "Q4 (Oct-Dec)"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have checked that this date range is not already claimed
+          required: true
+        - label: I have Docker installed and can run the archiver
+          required: true
+        - label: I will update this issue with my progress and results
+          required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Any additional notes (estimated completion time, etc.)
+      placeholder: "I plan to complete this over the weekend..."
