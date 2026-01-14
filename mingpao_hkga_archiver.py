@@ -800,155 +800,6 @@ class MingPaoHKGAArchiver:
             }
 
         # Check if already archived using internetarchive Python library
-        self.logger.debug(f"Checking existing archive: {url}")
-        try:
-            import internetarchive as ia
-
-            search_results = list(
-                ia.search_items(
-                    f"originalurl:{url}",
-                    fields=["identifier"],
-                    params={"limit": 1},
-                )
-            )
-
-            if search_results:
-                wayback_check = f"https://web.archive.org/web/2/{url}"
-                self.logger.info(f"Already archived: {url}")
-                with self.stats_lock:
-                    self.stats["already_archived"] += 1
-                return {
-                    "status": "exists",
-                    "wayback_url": wayback_check,
-                    "http_status": 200,
-                    "error": None,
-                }
-        except Exception as search_error:
-            self.logger.debug(f"Archive check failed, continuing: {search_error}")
-
-        # Use HTTP Wayback save API
-        self.logger.debug(f"Archiving via HTTP: {url}")
-        wayback_target = self.WAYBACK_SAVE_URL.format(url=url)
-
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-        }
-
-        try:
-            response = self._make_request(
-                "POST", wayback_target, timeout=config["timeout"], headers=headers
-            )
-
-            if response.status_code == 200:
-                if "Content-Location" in response.headers:
-                    wayback_url = (
-                        f"https://web.archive.org{response.headers['Content-Location']}"
-                    )
-                    self.logger.info(f"Archived: {url}")
-                    with self.stats_lock:
-                        self.stats["successful"] += 1
-                    return {
-                        "status": "success",
-                        "wayback_url": wayback_url,
-                        "http_status": 200,
-                        "error": None,
-                    }
-                else:
-                    wayback_check = f"https://web.archive.org/web/2/{url}"
-                    check_resp = self._make_request(
-                        "GET", wayback_check, timeout=config["timeout"], headers=headers
-                    )
-                    if check_resp.status_code == 200:
-                        self.logger.info(f"Already archived: {url}")
-                        with self.stats_lock:
-                            self.stats["already_archived"] += 1
-                        return {
-                            "status": "exists",
-                            "wayback_url": wayback_check,
-                            "http_status": 200,
-                            "error": None,
-                        }
-                    else:
-                        self.logger.warning(f"Unknown save status: {url}")
-                        with self.stats_lock:
-                            self.stats["unknown"] += 1
-                        return {
-                            "status": "unknown",
-                            "wayback_url": None,
-                            "http_status": response.status_code,
-                            "error": "Save returned 200 but no Content-Location",
-                        }
-
-            elif response.status_code in (429, 403):
-                self.logger.warning(f"Rate limited: {url}")
-                with self.stats_lock:
-                    self.stats["rate_limited"] += 1
-                return {
-                    "status": "rate_limited",
-                    "wayback_url": None,
-                    "http_status": response.status_code,
-                    "error": "Rate limited",
-                }
-
-            else:
-                self.logger.error(f"Failed ({response.status_code}): {url}")
-                with self.stats_lock:
-                    self.stats["failed"] += 1
-                return {
-                    "status": "failed",
-                    "wayback_url": None,
-                    "http_status": response.status_code,
-                    "error": f"HTTP {response.status_code}",
-                }
-
-        except requests.exceptions.Timeout:
-            if retry_count < config["max_retries"]:
-                self.logger.warning(
-                    f"Timeout, retry {retry_count + 1}/{config['max_retries']}: {url}"
-                )
-                time.sleep(config["retry_delay"])
-                return self.archive_to_wayback(url, retry_count + 1)
-            else:
-                self.logger.error(f"Timeout (retries exhausted): {url}")
-                with self.stats_lock:
-                    self.stats["timeout"] += 1
-                return {
-                    "status": "timeout",
-                    "wayback_url": None,
-                    "http_status": None,
-                    "error": "Timeout after retries",
-                }
-        except Exception as e:
-            # Check if it's a timeout-like error from mocking
-            if "timeout" in str(e).lower():
-                if retry_count < config["max_retries"]:
-                    self.logger.warning(
-                        f"Timeout-like error, retry {retry_count + 1}/{config['max_retries']}: {url}"
-                    )
-                    time.sleep(config["retry_delay"])
-                    return self.archive_to_wayback(url, retry_count + 1)
-                else:
-                    self.logger.error(f"Timeout-like error (retries exhausted): {url}")
-                    with self.stats_lock:
-                        self.stats["timeout"] += 1
-                    return {
-                        "status": "timeout",
-                        "wayback_url": None,
-                        "http_status": None,
-                        "error": "Timeout after retries",
-                    }
-            # Otherwise treat as general error
-            self.logger.error(f"Error: {url} - {str(e)}")
-            with self.stats_lock:
-                self.stats["error"] += 1
-            return {
-                "status": "error",
-                "wayback_url": None,
-                "http_status": None,
-                "error": str(e),
-            }
-
-        # Check if already archived using internetarchive Python library
         self.logger.debug(f"📥 檢查是否已有存檔: {url}")
         try:
             import internetarchive as ia
@@ -1058,20 +909,27 @@ class MingPaoHKGAArchiver:
             }
 
         except requests.exceptions.Timeout:
-            self.logger.warning(f"⏱️  存檔超時: {url}")
-            with self.stats_lock:
-                self.stats["timeout"] += 1
-            return {
-                "status": "timeout",
-                "wayback_url": None,
-                "http_status": None,
-                "error": "Timeout after retries",
-            }
+            if retry_count < config["max_retries"]:
+                self.logger.warning(
+                    f"⏱️  存檔超時，重試 {retry_count + 1}/{config['max_retries']}: {url}"
+                )
+                time.sleep(config["retry_delay"])
+                return self.archive_to_wayback(url, retry_count + 1)
+            else:
+                self.logger.error(f"⏱️  存檔超時（重試次數用盡）: {url}")
+                with self.stats_lock:
+                    self.stats["timeout"] += 1
+                return {
+                    "status": "timeout",
+                    "wayback_url": None,
+                    "http_status": None,
+                    "error": "Timeout after retries",
+                }
 
         except Exception as e:
             self.logger.error(f"💥 例外錯誤: {url} - {str(e)}")
             with self.stats_lock:
-                self.stats["failed"] += 1
+                self.stats["error"] += 1
             return {
                 "status": "error",
                 "wayback_url": None,
