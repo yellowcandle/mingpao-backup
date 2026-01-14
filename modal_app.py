@@ -508,14 +508,14 @@ def main(
     print("Testing Modal archiver locally")
     print("=" * 60)
     print(f"\nRequest: {json.dumps(test_request, indent=2)}")
-    print("\nCalling archive_articles.remote()...\n")
+    print("\nCalling archive_articles.local()...\n")
 
-    result = archive_articles.remote(test_request)
+    result = archive_articles.local(test_request)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
     print("\n" + "=" * 60)
     print("Fetching statistics...")
     print("=" * 60 + "\n")
 
-    stats = get_stats.remote()
+    stats = get_stats.local()
     print(json.dumps(stats, indent=2, ensure_ascii=False))
