@@ -72,7 +72,7 @@ volume = modal.Volume.from_name("mingpao-db", create_if_missing=True)
 # Define container image with dependencies and local files
 image = (
     modal.Image.debian_slim(python_version="3.12")
-    .uv_pip_install(
+    .pip_install(
         "requests>=2.31.0",
         "newspaper4k>=0.9.0",
         "pydantic>=2.0.0",
