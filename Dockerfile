@@ -1,30 +1,30 @@
-# Use a more robust base image than Alpine for Python apps with C-extensions
 FROM python:3.12-slim-bookworm
+
+# Install system dependencies FIRST (rarely changes, maximizes cache hits)
+# Using BuildKit cache mount for apt to speed up rebuilds
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    sqlite3 \
+    ca-certificates \
+    libxml2 \
+    libxslt1.1
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
-# We need libxml2 and libxslt for lxml (used by newspaper4k)
-# We need sqlite3 for our database operations
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libxml2 \
-    libxslt1.1 \
-    libc6 \
-    sqlite3 \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install uv for faster and more reliable dependency management
+# Install uv for dependency management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies using uv
+# Install dependencies using uv into a virtual environment
 # --frozen ensures we use the exact versions from uv.lock
 # --no-dev excludes development dependencies
-RUN uv sync --frozen --no-dev --no-install-project
+# Using BuildKit cache mount for uv cache
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project
 
 # Copy project files
 COPY mingpao_hkga_archiver.py .

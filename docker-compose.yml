@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   archiver:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: mingpao-archiver:latest
     volumes:
       - ./data:/data      # Database persistence

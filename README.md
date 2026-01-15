@@ -12,8 +12,8 @@ The easiest way to run the archiver is using Docker.
 git clone https://github.com/yellowcandle/mingpao-backup.git
 cd mingpao-backup
 
-# Build the Docker image
-docker build -t mingpao-archiver .
+# Build the Docker image (requires BuildKit for cache optimization)
+DOCKER_BUILDKIT=1 docker build -t mingpao-archiver .
 
 # Create necessary directories for persistent data
 mkdir -p data logs output
@@ -346,11 +346,11 @@ A: **Use Docker for production/volunteering** - ensures consistency and easier s
 # Pull latest changes
 git pull origin main
 
-# Rebuild Docker image
-docker build -t mingpao-archiver .
+# Rebuild Docker image (BuildKit required for cache optimization)
+DOCKER_BUILDKIT=1 docker build -t mingpao-archiver .
 
 # Or with Docker Compose
-docker-compose build --no-cache
+DOCKER_BUILDKIT=1 docker-compose build
 ```
 
 **Q: Can I run multiple instances simultaneously?**
