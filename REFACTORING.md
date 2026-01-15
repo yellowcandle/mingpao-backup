@@ -36,7 +36,7 @@ mingpao-backup/
 ├── database_repository.py     # Database operations (Repository pattern)
 ├── config_models.py          # Type-safe configuration with validation
 ├── archiving_strategies.py  # Strategy pattern for processing
-├── mingpao_archiver_refactored.py  # Main orchestrator
+├── mingpao_hkga_archiver.py  # Main orchestrator
 └── validate_config.py       # Configuration validator
 ```
 
@@ -230,7 +230,7 @@ class NewProcessingStrategy(ArchivingStrategy):
 from mingpao_hkga_archiver import MingPaoHKGAArchiver
 
 # After  
-from mingpao_archiver_refactored import MingPaoArchiver
+from mingpao_hkga_archiver import MingPaoArchiver
 ```
 
 2. **Use new configuration:**
@@ -323,8 +323,8 @@ The refactored system maintains backward compatibility:
 ### CLI Interface
 ```bash
 # All existing commands still work
-python mingpao_archiver_refactored.py --date 2025-01-13
-python mingpao_archiver_refactored.py --start 2025-01-01 --end 2025-01-31
+python mingpao_hkga_archiver.py --date 2025-01-13
+python mingpao_hkga_archiver.py --start 2025-01-01 --end 2025-01-31
 ```
 
 ### Database Schema

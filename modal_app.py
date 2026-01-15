@@ -147,7 +147,7 @@ image = (
     # Add local Python files into image
     .add_local_file("mingpao_hkga_archiver.py", "/root/mingpao_hkga_archiver.py")
     .add_local_file(
-        "mingpao_archiver_refactored.py", "/root/mingpao_archiver_refactored.py"
+        "mingpao_hkga_archiver.py", "/root/mingpao_hkga_archiver.py"
     )
     .add_local_file("url_generator.py", "/root/url_generator.py")
     .add_local_file("wayback_archiver.py", "/root/wayback_archiver.py")
@@ -194,7 +194,7 @@ def archive_articles(request_data: dict):
 
     # Import refactored archiver (copied into image)
     sys.path.insert(0, "/root")
-    from mingpao_archiver_refactored import MingPaoArchiver, parse_date
+    from mingpao_hkga_archiver import MingPaoArchiver, parse_date
 
     # Update config to use persistent volume
     config_path = Path("/root/config.json")
@@ -1631,7 +1631,7 @@ def backfill_titles(
     from datetime import datetime
 
     sys.path.insert(0, "/root")
-    from mingpao_archiver_refactored import MingPaoArchiver
+    from mingpao_hkga_archiver import MingPaoArchiver
 
     db_path = "/data/hkga_archive.db"
 
@@ -1803,7 +1803,7 @@ def daily_archive():
     from datetime import datetime, timedelta
 
     sys.path.insert(0, "/root")
-    from mingpao_archiver_refactored import MingPaoArchiver
+    from mingpao_hkga_archiver import MingPaoArchiver
 
     # Setup config for volume
     config_path = Path("/root/config.json")
@@ -1863,7 +1863,7 @@ def batch_historical_archive(start_date: str, end_date: str):
     from datetime import datetime, timedelta
 
     sys.path.insert(0, "/root")
-    from mingpao_archiver_refactored import MingPaoArchiver, parse_date
+    from mingpao_hkga_archiver import MingPaoArchiver, parse_date
 
     # Setup config
     config_path = Path("/root/config.json")

@@ -819,6 +819,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "requests" },
     { name = "ty" },
+    { name = "wayback" },
     { name = "waybackpy" },
 ]
 
@@ -853,6 +854,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "requests", specifier = ">=2.31.0" },
     { name = "ty", specifier = ">=0.0.11" },
+    { name = "wayback", specifier = ">=0.4.5" },
     { name = "waybackpy", specifier = ">=3.0.6" },
 ]
 provides-extras = ["dev"]
@@ -1904,6 +1906,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/4f/55/2af26693fd15165c4ff7857e38330e1b61ab8c37d15dc79118cdba115b7a/watchfiles-1.1.1-cp314-cp314t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8c91ed27800188c2ae96d16e3149f199d62f86c7af5f5f4d2c61a3ed8cd3666c", size = 455072 },
     { url = "https://files.pythonhosted.org/packages/66/1d/d0d200b10c9311ec25d2273f8aad8c3ef7cc7ea11808022501811208a750/watchfiles-1.1.1-cp314-cp314t-musllinux_1_1_aarch64.whl", hash = "sha256:311ff15a0bae3714ffb603e6ba6dbfba4065ab60865d15a6ec544133bdb21099", size = 629104 },
     { url = "https://files.pythonhosted.org/packages/e3/bd/fa9bb053192491b3867ba07d2343d9f2252e00811567d30ae8d0f78136fe/watchfiles-1.1.1-cp314-cp314t-musllinux_1_1_x86_64.whl", hash = "sha256:a916a2932da8f8ab582f242c065f5c81bed3462849ca79ee357dd9551b0e9b01", size = 622112 },
+]
+
+[[package]]
+name = "wayback"
+version = "0.4.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5e/2c/50cf23834aea1de728967a535ce94f65b432ba95b36110aee3b1dd3204f2/wayback-0.4.5.tar.gz", hash = "sha256:8f260a38ad8e317d9089fde86049151705a1bb4674e85b3da3a9f0204c5d4f55", size = 72216 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/04/0c/3ac76773d81beb57696097eefe98d90137d263e57bb6a6406b9238b273a8/wayback-0.4.5-py3-none-any.whl", hash = "sha256:4de2a65c99045ea99255f37ef2deeca445d94c612cf6fb7e78d46c9bb6b36e55", size = 41107 },
 ]
 
 [[package]]
