@@ -23,6 +23,7 @@ COPY pyproject.toml uv.lock ./
 # --frozen ensures we use the exact versions from uv.lock
 # --no-dev excludes development dependencies
 # Using BuildKit cache mount for uv cache
+# Note: Includes EDGI wayback library (>=0.4.5) for high-performance CDX searches
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 

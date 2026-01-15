@@ -22,7 +22,8 @@ import sys
 import os
 from pathlib import Path
 from typing import Optional
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+from wayback import WaybackClient, CdxRecord
 
 # --- PRIORITY RANGES CONFIGURATION ---
 # Edit this list to define which date ranges are high priority for volunteers
@@ -69,6 +70,69 @@ app = modal.App("mingpao-archiver")
 # Create persistent volume for database
 volume = modal.Volume.from_name("mingpao-db", create_if_missing=True)
 
+
+# --- WAYBACK CDX SEARCH HELPER ---
+class WaybackSearcher:
+    """High-performance Wayback CDX client for month-by-month searches"""
+
+    def __init__(self, rate_limit: float = 0.5):
+        """Initialize WaybackClient with rate limiting
+
+        Args:
+            rate_limit: Seconds between requests (CDX recommends 0.5-1.0)
+        """
+        self.client = WaybackClient(rate_limit=rate_limit)
+
+    def search_month(self, start_date: date, end_date: date) -> list[CdxRecord]:
+        """Search CDX for archives in a month range (typically one month)
+
+        Args:
+            start_date: Start of search range (YYYY-MM-DD)
+            end_date: End of search range (YYYY-MM-DD)
+
+        Returns:
+            List of CdxRecord objects matching the search
+        """
+        try:
+            # Search for all HK-GA articles in the date range
+            results = []
+            for record in self.client.search(
+                url="www.mingpaocanada.com/tor/htm/News/",
+                match_type="prefix",
+                from_date=start_date.strftime("%Y%m%d"),
+                to_date=end_date.strftime("%Y%m%d"),
+                filter=[
+                    "statuscode:200",
+                    "mimetype:text/html",
+                ],  # Only successful HTML captures
+                gzip=True,  # Compress response
+            ):
+                results.append(record)
+
+            return results
+        except Exception as e:
+            print(f"Error searching CDX for {start_date} to {end_date}: {e}")
+            return []
+
+    def get_month_range(self, year: int, month: int) -> tuple[date, date]:
+        """Get the first and last day of a month
+
+        Args:
+            year: Year (YYYY)
+            month: Month (1-12)
+
+        Returns:
+            Tuple of (first_day, last_day) as date objects
+        """
+        start = date(year, month, 1)
+        # Calculate last day of month
+        if month == 12:
+            end = date(year + 1, 1, 1) - timedelta(days=1)
+        else:
+            end = date(year, month + 1, 1) - timedelta(days=1)
+        return start, end
+
+
 # Define container image with dependencies and local files
 image = (
     modal.Image.debian_slim(python_version="3.12")
@@ -77,6 +141,7 @@ image = (
         "newspaper4k>=0.9.0",
         "pydantic>=2.0.0",
         "fastapi[standard]",
+        "wayback>=0.4.5",  # EDGI CDX client for high-performance Wayback searches
     )
     # Add local Python files into image
     .add_local_file("mingpao_hkga_archiver.py", "/root/mingpao_hkga_archiver.py")
@@ -1826,10 +1891,10 @@ def batch_historical_archive(start_date: str, end_date: str):
 )
 def sync_from_wayback(start_date: str, end_date: str, rate_limit_delay: float = 0.5):
     """
-    Sync archive status from Wayback Machine without re-archiving.
+    Sync archive status from Wayback Machine using CDX API (EDGI wayback library).
 
-    Checks which URLs are already in Wayback and updates our database.
-    This populates the dashboard with accurate coverage data.
+    Uses month-by-month CDX searches for dramatically improved performance.
+    Instead of 1000+ individual URL checks, uses 1-3 CDX searches per month.
 
     Usage:
         modal run modal_app.py::sync_from_wayback --start-date 2024-01-01 --end-date 2024-12-31
@@ -1837,16 +1902,14 @@ def sync_from_wayback(start_date: str, end_date: str, rate_limit_delay: float = 
     Args:
         start_date: Start date (YYYY-MM-DD)
         end_date: End date (YYYY-MM-DD)
-        rate_limit_delay: Seconds between API requests (default 0.5)
+        rate_limit_delay: Not used (CDX client handles rate limiting internally)
     """
     import sqlite3
-    import requests
-    import time
     from datetime import datetime, timedelta
 
     # Parse dates
-    start = datetime.strptime(start_date, "%Y-%m-%d")
-    end = datetime.strptime(end_date, "%Y-%m-%d")
+    start = datetime.strptime(start_date, "%Y-%m-%d").date()
+    end = datetime.strptime(end_date, "%Y-%m-%d").date()
 
     db_path = "/data/hkga_archive.db"
 
@@ -1854,7 +1917,7 @@ def sync_from_wayback(start_date: str, end_date: str, rate_limit_delay: float = 
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # Ensure table exists
+    # Ensure table exists (with digest column for CDX compatibility)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS archive_records (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1864,6 +1927,7 @@ def sync_from_wayback(start_date: str, end_date: str, rate_limit_delay: float = 
             status TEXT DEFAULT 'pending',
             http_status INTEGER,
             error_message TEXT,
+            digest TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             matched_keywords TEXT,
@@ -1874,132 +1938,129 @@ def sync_from_wayback(start_date: str, end_date: str, rate_limit_delay: float = 
     """)
     conn.commit()
 
-    # URL prefixes for HK-GA articles
-    HK_GA_PREFIXES = [
-        "gaa",
-        "gab",
-        "gac",
-        "gad",
-        "gae",
-        "gaf",
-        "gag",
-        "gba",
-        "gbb",
-        "gbc",
-        "gbd",
-        "gbe",
-        "gca",
-        "gcb",
-        "gcc",
-        "gcd",
-        "gda",
-        "gdb",
-        "gdc",
-        "gha",
-        "ghb",
-        "ghc",
-        "gma",
-        "gmb",
-        "gmc",
-        "gna",
-        "gnb",
-        "gnc",
-        "goa",
-        "gob",
-        "goc",
-    ]
-
-    print("=" * 60)
-    print("SYNC FROM WAYBACK MACHINE")
+    print("=" * 80)
+    print("CDX SYNC FROM WAYBACK MACHINE (Month-by-Month)")
     print(f"Date range: {start_date} to {end_date}")
-    print("=" * 60)
+    print("=" * 80)
 
-    stats = {"checked": 0, "found": 0, "not_found": 0, "errors": 0, "skipped": 0}
+    stats = {
+        "cdx_searches": 0,
+        "records_found": 0,
+        "inserted": 0,
+        "skipped": 0,
+        "errors": 0,
+        "duration_seconds": 0,
+    }
+    start_time = datetime.now()
+
+    searcher = WaybackSearcher(rate_limit=rate_limit_delay)
+
+    # Process month by month (much more efficient than day-by-day)
     current_date = start
-
     while current_date <= end:
-        date_str = current_date.strftime("%Y%m%d")
-        date_display = current_date.strftime("%Y-%m-%d")
-        day_found = 0
-        day_checked = 0
+        # Get month range
+        month_start, month_end = searcher.get_month_range(
+            current_date.year, current_date.month
+        )
 
-        # Generate URLs for this date
-        for prefix in HK_GA_PREFIXES:
-            for num in range(1, 20):  # 1-19 per prefix
-                url = f"http://www.mingpaocanada.com/tor/htm/News/{date_str}/HK-{prefix}{num}_r.htm"
+        # Skip if month start is beyond end date
+        if month_start > end:
+            break
 
-                # Check if already in database with success/exists status
-                cursor.execute(
-                    "SELECT status FROM archive_records WHERE article_url = ?", (url,)
-                )
-                existing = cursor.fetchone()
-                if existing and existing[0] in ("success", "exists"):
-                    stats["skipped"] += 1
-                    continue
+        print(f"\nSearching CDX for {month_start} to {month_end}...")
 
-                # Check Wayback availability
+        try:
+            # Single CDX search per month (replaces 1000+ individual checks)
+            records = searcher.search_month(month_start, month_end)
+            stats["cdx_searches"] += 1
+            stats["records_found"] += len(records)
+
+            # Batch insert/update records
+            for record in records:
                 try:
-                    api_url = f"https://archive.org/wayback/available?url={url}"
-                    response = requests.get(api_url, timeout=10)
-                    data = response.json()
+                    # Extract key data from CdxRecord
+                    url = record.original  # Original URL
+                    timestamp = record.timestamp  # Capture timestamp (YYYYMMDDhhmmss)
+                    status_code = record.status_code  # HTTP status
+                    digest = record.digest  # SHA-1 hash of content
 
-                    day_checked += 1
-                    stats["checked"] += 1
+                    # Check if already synced
+                    cursor.execute(
+                        "SELECT status FROM archive_records WHERE article_url = ?",
+                        (url,),
+                    )
+                    existing = cursor.fetchone()
+                    if existing and existing[0] in ("success", "exists"):
+                        stats["skipped"] += 1
+                        continue
 
-                    snapshots = data.get("archived_snapshots", {})
-                    closest = snapshots.get("closest", {})
+                    # Construct Wayback URL
+                    wayback_url = f"https://web.archive.org/web/{timestamp}/{url}"
 
-                    if closest.get("available"):
-                        wayback_url = closest.get("url", "")
-                        timestamp = closest.get("timestamp", "")
-
-                        # Insert or update record
-                        cursor.execute(
-                            """
-                            INSERT INTO archive_records (article_url, wayback_url, archive_date, status, checked_wayback)
-                            VALUES (?, ?, ?, 'exists', 1)
-                            ON CONFLICT(article_url) DO UPDATE SET
-                                wayback_url = excluded.wayback_url,
-                                status = 'exists',
-                                checked_wayback = 1,
-                                updated_at = CURRENT_TIMESTAMP
-                        """,
-                            (url, wayback_url, date_str),
-                        )
-
-                        day_found += 1
-                        stats["found"] += 1
+                    # Get archive date from URL (YYYYMMDD)
+                    if "/News/" in url:
+                        parts = url.split("/News/")
+                        if len(parts) > 1:
+                            date_part = parts[1].split("/")[0]
+                            archive_date = date_part if len(date_part) == 8 else None
+                        else:
+                            archive_date = month_start.strftime("%Y%m%d")
                     else:
-                        stats["not_found"] += 1
+                        archive_date = month_start.strftime("%Y%m%d")
 
-                    time.sleep(rate_limit_delay)
+                    # Insert or update record
+                    cursor.execute(
+                        """
+                        INSERT INTO archive_records 
+                        (article_url, wayback_url, archive_date, status, http_status, digest, checked_wayback)
+                        VALUES (?, ?, ?, 'exists', ?, ?, 1)
+                        ON CONFLICT(article_url) DO UPDATE SET
+                            wayback_url = excluded.wayback_url,
+                            status = 'exists',
+                            http_status = excluded.http_status,
+                            digest = excluded.digest,
+                            checked_wayback = 1,
+                            updated_at = CURRENT_TIMESTAMP
+                    """,
+                        (url, wayback_url, archive_date, status_code, digest),
+                    )
+                    stats["inserted"] += 1
 
                 except Exception as e:
                     stats["errors"] += 1
-                    print(f"  Error checking {url}: {e}")
-                    time.sleep(1)  # Longer delay on error
+                    print(f"  Error processing record: {e}")
 
-        conn.commit()
-        volume.commit()
+            conn.commit()
+            volume.commit()
 
-        if day_checked > 0:
-            print(
-                f"  {date_display}: checked {day_checked}, found {day_found} in Wayback"
-            )
+            print(f"  ✓ {len(records)} records found, {stats['inserted']} inserted")
 
-        current_date += timedelta(days=1)
+        except Exception as e:
+            stats["errors"] += 1
+            print(f"  Error searching CDX: {e}")
+
+        # Move to next month
+        if current_date.month == 12:
+            current_date = date(current_date.year + 1, 1, 1)
+        else:
+            current_date = date(current_date.year, current_date.month + 1, 1)
 
     conn.close()
     volume.commit()
 
-    print("\n" + "=" * 60)
-    print("SYNC COMPLETE")
-    print(f"  Checked: {stats['checked']}")
-    print(f"  Found in Wayback: {stats['found']}")
-    print(f"  Not found: {stats['not_found']}")
+    stats["duration_seconds"] = (datetime.now() - start_time).total_seconds()
+
+    print("\n" + "=" * 80)
+    print("CDX SYNC COMPLETE")
+    print(f"  CDX Searches: {stats['cdx_searches']}")
+    print(f"  Total Records Found: {stats['records_found']}")
+    print(f"  Inserted/Updated: {stats['inserted']}")
     print(f"  Skipped (already synced): {stats['skipped']}")
     print(f"  Errors: {stats['errors']}")
-    print("=" * 60)
+    print(f"  Duration: {stats['duration_seconds']:.1f} seconds")
+    print("=" * 80)
+
+    return stats
 
     return stats
 
@@ -2012,55 +2073,19 @@ def sync_from_wayback(start_date: str, end_date: str, rate_limit_delay: float = 
 )
 def hourly_sync_wayback():
     """
-    Hourly sync with Wayback Machine to keep dashboard accurate.
+    Hourly sync with Wayback Machine using CDX API (EDGI wayback library).
 
-    Automatically checks the last 30 days for any new archives or changes.
+    Uses month-by-month CDX searches to efficiently verify archives.
+    Much faster and more reliable than individual URL checks.
     Runs every hour via Modal Cron scheduler.
     """
     import sqlite3
-    import requests
-    import time
     from datetime import datetime, timedelta
 
-    end_date = datetime.now().strftime("%Y-%m-%d")
-    start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    print("Starting hourly Wayback CDX sync (last 30 days)...")
 
-    print(f"Starting hourly Wayback sync for {start_date} to {end_date}")
-
-    # URL prefixes for HK-GA articles
-    HK_GA_PREFIXES = [
-        "gaa",
-        "gab",
-        "gac",
-        "gad",
-        "gae",
-        "gaf",
-        "gag",
-        "gba",
-        "gbb",
-        "gbc",
-        "gbd",
-        "gbe",
-        "gca",
-        "gcb",
-        "gcc",
-        "gcd",
-        "gda",
-        "gdb",
-        "gdc",
-        "gha",
-        "ghb",
-        "ghc",
-        "gma",
-        "gmb",
-        "gmc",
-        "gna",
-        "gnb",
-        "gnc",
-        "goa",
-        "gob",
-        "goc",
-    ]
+    end_date = date.today()
+    start_date = end_date - timedelta(days=30)
 
     db_path = "/data/hkga_archive.db"
 
@@ -2068,57 +2093,99 @@ def hourly_sync_wayback():
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
-        stats = {"checked": 0, "found": 0, "updated": 0}
-        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-        current_date = start_dt
+        stats = {
+            "cdx_searches": 0,
+            "records_found": 0,
+            "inserted": 0,
+            "duration_seconds": 0,
+        }
+        start_time = datetime.now()
 
-        while current_date <= end_dt:
-            date_str = current_date.strftime("%Y%m%d")
+        searcher = WaybackSearcher(rate_limit=0.5)
 
-            for prefix in HK_GA_PREFIXES:
-                for num in range(1, 20):
-                    url = f"http://www.mingpaocanada.com/tor/htm/News/{date_str}/HK-{prefix}{num}_r.htm"
+        # Process month by month for the last 30 days
+        current_date = start_date
+        while current_date <= end_date:
+            # Get month range
+            month_start, month_end = searcher.get_month_range(
+                current_date.year, current_date.month
+            )
 
+            # Skip if month is beyond end_date
+            if month_start > end_date:
+                break
+
+            print(f"Searching CDX for {month_start} to {month_end}...")
+
+            try:
+                # Single CDX search per month (instead of 1000+ individual checks)
+                records = searcher.search_month(month_start, month_end)
+                stats["cdx_searches"] += 1
+                stats["records_found"] += len(records)
+
+                # Batch insert/update records
+                for record in records:
                     try:
-                        api_url = f"https://archive.org/wayback/available?url={url}"
-                        response = requests.get(api_url, timeout=10)
-                        data = response.json()
+                        # Extract key data from CdxRecord
+                        url = record.original  # Original URL
+                        timestamp = record.timestamp  # Capture timestamp
+                        status_code = record.status_code  # HTTP status
+                        digest = record.digest  # SHA-1 hash of content
 
-                        stats["checked"] += 1
-                        snapshots = data.get("archived_snapshots", {})
-                        closest = snapshots.get("closest", {})
+                        # Construct Wayback URL
+                        wayback_url = f"https://web.archive.org/web/{timestamp}/{url}"
 
-                        if closest.get("available"):
-                            wayback_url = closest.get("url", "")
-                            cursor.execute(
-                                """
-                                INSERT INTO archive_records (article_url, wayback_url, archive_date, status, checked_wayback)
-                                VALUES (?, ?, ?, 'exists', 1)
-                                ON CONFLICT(article_url) DO UPDATE SET
-                                    wayback_url = excluded.wayback_url,
-                                    status = 'exists',
-                                    checked_wayback = 1,
-                                    updated_at = CURRENT_TIMESTAMP
-                            """,
-                                (url, wayback_url, date_str),
-                            )
-                            stats["found"] += 1
-                            stats["updated"] += 1
+                        # Get archive date from URL (YYYYMMDD)
+                        if "/News/" in url:
+                            parts = url.split("/News/")
+                            if len(parts) > 1:
+                                date_part = parts[1].split("/")[0]
+                                archive_date = (
+                                    date_part if len(date_part) == 8 else None
+                                )
+                            else:
+                                archive_date = month_start.strftime("%Y%m%d")
+                        else:
+                            archive_date = month_start.strftime("%Y%m%d")
 
-                        time.sleep(0.2)
+                        # Insert or update record
+                        cursor.execute(
+                            """
+                            INSERT INTO archive_records 
+                            (article_url, wayback_url, archive_date, status, http_status, digest, checked_wayback)
+                            VALUES (?, ?, ?, 'exists', ?, ?, 1)
+                            ON CONFLICT(article_url) DO UPDATE SET
+                                wayback_url = excluded.wayback_url,
+                                status = 'exists',
+                                http_status = excluded.http_status,
+                                digest = excluded.digest,
+                                checked_wayback = 1,
+                                updated_at = CURRENT_TIMESTAMP
+                        """,
+                            (url, wayback_url, archive_date, status_code, digest),
+                        )
+                        stats["inserted"] += 1
+
                     except Exception as e:
-                        print(f"Error checking {url}: {e}")
-                        time.sleep(1)
+                        print(f"Error processing record {record}: {e}")
+
+            except Exception as e:
+                print(f"Error searching CDX for {month_start} to {month_end}: {e}")
 
             conn.commit()
             volume.commit()
-            current_date += timedelta(days=1)
+
+            # Move to next month
+            if current_date.month == 12:
+                current_date = date(current_date.year + 1, 1, 1)
+            else:
+                current_date = date(current_date.year, current_date.month + 1, 1)
 
         conn.close()
         volume.commit()
 
-        print(f"Hourly sync completed: {stats}")
+        stats["duration_seconds"] = (datetime.now() - start_time).total_seconds()
+        print(f"Hourly CDX sync completed: {stats}")
         return stats
 
     except Exception as e:
