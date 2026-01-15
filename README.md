@@ -4,7 +4,7 @@
 
 ## ⚠️ 如果你係 tech 人，可以幫手行咗 S3 直接存檔版本先
 
-**強烈建議優先使用姐妹項目 [mingpao-backup-s3](https://github.com/yellowcandle/mingpao-backup-s3)**，它直接透過 Internet Archive 的 S3 API 存檔，更穩定且無 Wayback Machine 速率限制。
+**如果你係 tech 人，建議優先使用姐妹項目 [mingpao-backup-s3](https://github.com/yellowcandle/mingpao-backup-s3)**，它直接透過 Internet Archive 的 S3 API 存檔，更穩定且無 Wayback Machine 速率限制。
 
 ### 為什麼選擇 S3 版本？
 
