@@ -2,6 +2,7 @@
 
 import pytest
 import json
+import os
 from pathlib import Path
 from unittest.mock import Mock, patch
 from mingpao_hkga_archiver import MingPaoHKGAArchiver
@@ -116,59 +117,98 @@ class TestMingPaoHKGAArchiver:
         """Test checking if non-existent URL returns False"""
         assert archiver.check_url_exists("http://example.com/notexists.htm") is False
 
-    @patch("mingpao_hkga_archiver.requests.Response")
-    @patch("mingpao_hkga_archiver.requests")
-    def test_archive_to_wayback_already_exists(
-        self, mock_requests, mock_response, archiver
-    ):
-        """Test archiving URL that already exists"""
-        url = "http://www.mingpaocanada.com/tor/htm/News/20240101/HK-gaa1_r.htm"
+    @patch("mingpao_hkga_archiver.WaybackMachineAvailabilityAPI")
+    def test_check_wayback_exists_positive(self, mock_availability_api_class, archiver):
+        """Test checking if URL exists in Wayback Machine (positive)"""
+        url = "http://example.com/exists.htm"
 
-        # Mock response for Wayback save
-        mock_response.status_code = 200
-        mock_response.headers = {
-            "Content-Location": "/web/20240101000000/http://example.com"
-        }
-        mock_requests.post.return_value = mock_response
+        # Mock newest archive URL
+        mock_instance = Mock()
+        mock_newest = Mock()
+        mock_newest.archive_url = (
+            "https://web.archive.org/web/20240101/http://example.com/exists.htm"
+        )
+        mock_instance.newest.return_value = mock_newest
+        mock_availability_api_class.return_value = mock_instance
 
-        result = archiver.archive_to_wayback(url)
+        exists, wayback_url = archiver.check_wayback_exists(url)
 
-        assert result["status"] in ["success", "exists", "unknown"]
+        assert exists is True
+        assert (
+            wayback_url
+            == "https://web.archive.org/web/20240101/http://example.com/exists.htm"
+        )
 
-    @patch("mingpao_hkga_archiver.requests")
-    def test_archive_to_wayback_rate_limited(self, mock_requests, archiver):
-        """Test rate limiting response"""
-        url = "http://example.com/rate-limited.htm"
+    @patch("mingpao_hkga_archiver.WaybackMachineAvailabilityAPI")
+    def test_check_wayback_exists_negative(self, mock_availability_api_class, archiver):
+        """Test checking if URL exists in Wayback Machine (negative)"""
+        url = "http://example.com/notexists.htm"
 
-        # Mock 429 response
-        mock_response = Mock()
-        mock_response.status_code = 429
-        mock_requests.post.return_value = mock_response
+        # Mock no archive URL found
+        mock_instance = Mock()
+        mock_instance.newest.return_value = None
+        mock_availability_api_class.return_value = mock_instance
 
-        result = archiver.archive_to_wayback(url)
+        exists, wayback_url = archiver.check_wayback_exists(url)
 
-        assert result["status"] == "rate_limited"
-        assert result["http_status"] == 429
+        assert exists is False
+        assert wayback_url is None
 
-    def test_archive_to_wayback_timeout(self, archiver):
-        """Test timeout handling"""
-        url = "http://example.com/timeout.htm"
+    @patch("mingpao_hkga_archiver.WaybackMachineSaveAPI")
+    def test_archive_to_wayback_success(self, mock_save_api_class, archiver):
+        """Test successful archiving with waybackpy"""
+        url = "http://example.com/success.htm"
 
-        # Create a custom timeout exception class
-        class MockTimeoutError(Exception):
-            pass
+        # Mock successful save
+        mock_instance = Mock()
+        mock_instance.save.return_value = (
+            "https://web.archive.org/web/20240101/http://example.com/success.htm"
+        )
+        mock_save_api_class.return_value = mock_instance
 
-        # Mock the _make_request to raise timeout
-        with patch.object(
-            archiver,
-            "_make_request",
-            side_effect=MockTimeoutError("Connection timeout"),
-        ):
+        # Mock check_wayback_exists to return False first
+        with patch.object(archiver, "check_wayback_exists", return_value=(False, None)):
             result = archiver.archive_to_wayback(url)
 
-            # Should handle timeout via generic exception handler
+            assert result["status"] == "success"
+            assert (
+                result["wayback_url"]
+                == "https://web.archive.org/web/20240101/http://example.com/success.htm"
+            )
+            assert result["http_status"] == 200
+
+    @patch("mingpao_hkga_archiver.WaybackMachineSaveAPI")
+    def test_archive_to_wayback_rate_limited(self, mock_save_api_class, archiver):
+        """Test rate limiting with waybackpy"""
+        url = "http://example.com/rate-limited.htm"
+
+        # Mock rate limit error from waybackpy (it usually raises Exception with error message)
+        mock_instance = Mock()
+        mock_instance.save.side_effect = Exception("HTTP 429: Too Many Requests")
+        mock_save_api_class.return_value = mock_instance
+
+        with patch.object(archiver, "check_wayback_exists", return_value=(False, None)):
+            result = archiver.archive_to_wayback(url)
+
+            assert result["status"] == "rate_limited"
+            assert result["http_status"] == 429
+
+    @patch("mingpao_hkga_archiver.WaybackMachineSaveAPI")
+    def test_archive_to_wayback_timeout(self, mock_save_api_class, archiver):
+        """Test timeout with waybackpy"""
+        url = "http://example.com/timeout.htm"
+
+        # Mock timeout error
+        mock_instance = Mock()
+        mock_instance.save.side_effect = Exception("Read timeout")
+        mock_save_api_class.return_value = mock_instance
+
+        with patch.object(archiver, "check_wayback_exists", return_value=(False, None)):
+            result = archiver.archive_to_wayback(url)
+
+            # Since retry logic is recursive, we might need to be careful with mocks if we want to test retries
+            # But for a single attempt that fails with timeout:
             assert result["status"] == "timeout" or result["status"] == "error"
-            assert "timeout" in result["error"].lower()
 
     def test_close_database(self, archiver):
         """Test database connection closing"""

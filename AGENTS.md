@@ -2,7 +2,7 @@
 
 This file provides guidance for AI agents and developers working on this project.
 
-please use uv to manage dependencies and run the archiver.
+IMPORTANT: please use uv to manage dependencies and run the archiver.
 
 ## Project Overview
 
@@ -316,10 +316,18 @@ If database is locked:
 ## Dependencies
 
 Key packages:
-- `requests` - HTTP requests
-- `newspaper3k` - Article extraction (optional)
+- `waybackpy` - Wayback Machine API operations (save/availability)
+- `requests` - HTTP requests for general web fetching
+- `newspaper4k` - Article extraction (optional)
 - `lxml_html_clean` - HTML parsing for newspaper3k
 - `internetarchive` - Internet Archive API (optional)
+
+### Why waybackpy?
+We use `waybackpy` instead of raw HTTP requests because:
+- More robust handling of Wayback Machine API nuances
+- Built-in verification for Save Page Now 2 (SPN2) operations
+- Better error handling and response parsing
+- Consistent session and header management for IA APIs
 
 See `requirements.txt` for full list.
 

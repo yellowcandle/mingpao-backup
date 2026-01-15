@@ -29,6 +29,7 @@ import argparse
 from typing import List, Dict, Tuple, Optional, Set, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+from waybackpy import WaybackMachineSaveAPI, WaybackMachineAvailabilityAPI
 
 
 class RateLimiter:
@@ -450,20 +451,26 @@ class MingPaoHKGAArchiver:
 
         return matched
 
+    def _get_user_agent(self) -> str:
+        """獲取統一的 User-Agent"""
+        return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+    def _get_headers(self) -> Dict[str, str]:
+        """獲取統一的 HTTP Headers"""
+        return {"User-Agent": self._get_user_agent()}
+
     def check_wayback_exists(
         self, url: str, timeout: int = 15
     ) -> Tuple[bool, Optional[str]]:
-        """Check if URL exists in Wayback Machine using Availability API"""
-        availability_url = f"https://archive.org/wayback/available?url={url}"
+        """使用 waybackpy 檢查 URL 是否存在於 Wayback Machine"""
         try:
-            response = self._make_request("GET", availability_url, timeout=timeout)
-            if response.status_code == 200:
-                data = response.json()
-                snapshots = data.get("archived_snapshots", {})
-                if snapshots:
-                    closest = snapshots.get("closest", {})
-                    if closest.get("available") and closest.get("url"):
-                        return True, closest.get("url")
+            availability_api = WaybackMachineAvailabilityAPI(
+                url, user_agent=self._get_user_agent()
+            )
+            # 獲取最新存檔
+            newest = availability_api.newest()
+            if newest and newest.archive_url:
+                return True, newest.archive_url
         except Exception as e:
             self.logger.debug(
                 f"Wayback availability check failed: {url[:50]} - {str(e)}"
@@ -829,142 +836,107 @@ class MingPaoHKGAArchiver:
                 "error": None,
             }
 
-        # Use HTTP Wayback save API
-        self.logger.debug(f"🔄 使用 HTTP 存檔: {url}")
-        wayback_target = self.WAYBACK_SAVE_URL.format(url=url)
+        # Use waybackpy Save API
+        self.logger.debug(f"🔄 使用 waybackpy 存檔: {url}")
 
         try:
-            # We don't need to manually set headers here as _make_request does it
-            response = self._make_request(
-                "POST", wayback_target, timeout=config["timeout"]
-            )
+            save_api = WaybackMachineSaveAPI(url, user_agent=self._get_user_agent())
 
-            if response.status_code == 200:
-                if "Content-Location" in response.headers:
-                    wayback_url = (
-                        f"https://web.archive.org{response.headers['Content-Location']}"
-                    )
-                    self.logger.info(f"✅ 存檔成功: {url}")
-                    self.logger.info(f"   Wayback: {wayback_url}")
-                    with self.stats_lock:
-                        self.stats["successful"] += 1
-                    return {
-                        "status": "success",
-                        "wayback_url": wayback_url,
-                        "http_status": response.status_code,
-                        "error": None,
-                    }
-                else:
-                    self.logger.debug(f"Save accepted for {url[:50]}, verifying...")
-                    # SPN2 can take some time to index the new snapshot
-                    for wait_attempt in range(3):
-                        time.sleep(5 * (wait_attempt + 1))
-                        exists, wayback_url = self.check_wayback_exists(url)
-                        if exists:
-                            self.logger.info(f"✅ 存檔成功 (延遲驗證): {url}")
-                            with self.stats_lock:
-                                self.stats["successful"] += 1
-                            return {
-                                "status": "success",
-                                "wayback_url": wayback_url,
-                                "http_status": 200,
-                                "error": None,
-                            }
+            # Attempt to save (waybackpy handles verification internally)
+            archive_url = save_api.save()
 
-                    # If we got a 200 OK but couldn't verify, it's likely just slow indexing
-                    self.logger.info(f"ℹ️  存檔已接受但未即時顯示 (200 OK): {url}")
-                    with self.stats_lock:
-                        self.stats["successful"] += 1
-                    return {
-                        "status": "success",
-                        "wayback_url": f"https://web.archive.org/web/*/{url}",
-                        "http_status": 200,
-                        "error": "Pending verification",
-                    }
+            if archive_url:
+                self.logger.info(f"✅ 存檔成功: {url}")
+                self.logger.info(f"   Wayback: {archive_url}")
+                with self.stats_lock:
+                    self.stats["successful"] += 1
+                return {
+                    "status": "success",
+                    "wayback_url": archive_url,
+                    "http_status": 200,
+                    "error": None,
+                }
+
+        except Exception as e:
+            error_str = str(e).lower()
 
             # Handle rate limiting
-            if response.status_code in (429, 403):
+            if (
+                "rate" in error_str
+                or "429" in error_str
+                or "too many" in error_str
+                or "403" in error_str
+            ):
                 self.logger.warning(f"🚫 Rate limited: {url}")
                 with self.stats_lock:
                     self.stats["rate_limited"] += 1
                 return {
                     "status": "rate_limited",
                     "wayback_url": None,
-                    "http_status": response.status_code,
+                    "http_status": 429,
                     "error": "Rate limited",
                 }
 
-            # Try to check if archived despite non-200 status
-            exists, wayback_url = self.check_wayback_exists(url)
-            if exists:
-                with self.stats_lock:
-                    self.stats["already_archived"] += 1
-                return {
-                    "status": "exists",
-                    "wayback_url": wayback_url,
-                    "http_status": 200,
-                    "error": None,
-                }
+            # Handle timeout
+            elif "timeout" in error_str:
+                if retry_count < config["max_retries"]:
+                    self.logger.warning(
+                        f"⏱️  存檔超時，重試 {retry_count + 1}/{config['max_retries']}: {url}"
+                    )
+                    time.sleep(config["retry_delay"])
+                    return self.archive_to_wayback(url, retry_count + 1)
+                else:
+                    self.logger.error(f"⏱️  存檔超時（重試次數用盡）: {url}")
+                    with self.stats_lock:
+                        self.stats["timeout"] += 1
+                    return {
+                        "status": "timeout",
+                        "wayback_url": None,
+                        "http_status": None,
+                        "error": "Timeout after retries",
+                    }
 
-            self.logger.warning(f"⚠️  HTTP 存檔失敗 ({response.status_code}): {url}")
-            with self.stats_lock:
-                self.stats["failed"] += 1
-            return {
-                "status": "failed",
-                "wayback_url": None,
-                "http_status": response.status_code,
-                "error": f"HTTP {response.status_code}",
-            }
+            # Handle connection errors
+            elif "connection" in error_str or "ssl" in error_str:
+                if retry_count < config["max_retries"]:
+                    wait_time = config["retry_delay"] * (2**retry_count)
+                    self.logger.warning(
+                        f"🔌 連線錯誤，等待 {wait_time}s 後重試 {retry_count + 1}/{config['max_retries']}: {url}"
+                    )
+                    time.sleep(wait_time)
+                    return self.archive_to_wayback(url, retry_count + 1)
+                else:
+                    self.logger.error(f"🔌 連線錯誤（重試次數用盡）: {url} - {str(e)}")
+                    with self.stats_lock:
+                        self.stats["error"] += 1
+                    return {
+                        "status": "error",
+                        "wayback_url": None,
+                        "http_status": None,
+                        "error": f"Connection error after retries: {str(e)}",
+                    }
 
-        except requests.exceptions.Timeout:
-            if retry_count < config["max_retries"]:
-                self.logger.warning(
-                    f"⏱️  存檔超時，重試 {retry_count + 1}/{config['max_retries']}: {url}"
-                )
-                time.sleep(config["retry_delay"])
-                return self.archive_to_wayback(url, retry_count + 1)
+            # Other exceptions
             else:
-                self.logger.error(f"⏱️  存檔超時（重試次數用盡）: {url}")
-                with self.stats_lock:
-                    self.stats["timeout"] += 1
-                return {
-                    "status": "timeout",
-                    "wayback_url": None,
-                    "http_status": None,
-                    "error": "Timeout after retries",
-                }
-
-        except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
-            # SSL/Connection errors often indicate rate limiting or server issues
-            if retry_count < config["max_retries"]:
-                # Use exponential backoff for connection issues
-                wait_time = config["retry_delay"] * (2**retry_count)
-                self.logger.warning(
-                    f"🔌 連線錯誤，等待 {wait_time}s 後重試 {retry_count + 1}/{config['max_retries']}: {url}"
-                )
-                time.sleep(wait_time)
-                return self.archive_to_wayback(url, retry_count + 1)
-            else:
-                self.logger.error(f"🔌 連線錯誤（重試次數用盡）: {url} - {str(e)}")
+                self.logger.error(f"💥 例外錯誤: {url} - {str(e)}")
                 with self.stats_lock:
                     self.stats["error"] += 1
                 return {
                     "status": "error",
                     "wayback_url": None,
                     "http_status": None,
-                    "error": f"Connection error after retries: {str(e)}",
+                    "error": str(e),
                 }
 
-        except Exception as e:
-            self.logger.error(f"💥 例外錯誤: {url} - {str(e)}")
-            with self.stats_lock:
-                self.stats["error"] += 1
-            return {
-                "status": "error",
-                "wayback_url": None,
-                "http_status": None,
-                "error": str(e),
-            }
+        # Fallback (should not reach here if save_api.save() is successful or raises)
+        with self.stats_lock:
+            self.stats["failed"] += 1
+        return {
+            "status": "failed",
+            "wayback_url": None,
+            "http_status": None,
+            "error": "Unknown failure",
+        }
 
     def record_attempt(self, article_url: str, result: Dict, archive_date: str):
         """記錄存檔嘗試到數據庫"""
