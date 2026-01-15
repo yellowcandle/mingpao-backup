@@ -29,6 +29,10 @@ docker run -v $(pwd)/data:/data -v $(pwd)/logs:/logs \
 docker run -v $(pwd)/data:/data -v $(pwd)/logs:/logs \
   mingpao-archiver --start 2025-01-01 --end 2025-01-31
 
+# Archive multiple non-consecutive dates
+docker run -v $(pwd)/data:/data -v $(pwd)/logs:/logs \
+  mingpao-archiver --dates "2025-01-15,2025-01-20,2025-01-25"
+
 # Archive with keywords (Traditional Chinese)
 docker run -v $(pwd)/data:/data -v $(pwd)/logs:/logs \
   mingpao-archiver --enable-keywords --keyword "香港" --keyword "政治" --backdays 7
@@ -80,6 +84,7 @@ You can pass these flags to the docker command:
 | Flag | Description |
 |------|-------------|
 | `--date YYYY-MM-DD` | Archive a single date |
+| `--dates "D1,D2,D3"` | Archive multiple non-consecutive dates (comma-separated) |
 | `--start YYYY-MM-DD` | Start date for range |
 | `--end YYYY-MM-DD` | End date for range |
 | `--backdays N` | Archive last N days from today |
@@ -92,7 +97,7 @@ You can pass these flags to the docker command:
 
 - 🐳 **Docker Native**: Primary way to run, ensuring environment consistency.
 - 🔍 **Keyword Filtering**: Support for Traditional Chinese keyword matching (Title or Body).
-- 📅 **Flexible Ranges**: Archive specific dates, ranges, or rolling windows (backdays).
+- 📅 **Flexible Ranges**: Archive specific dates, ranges, non-consecutive dates, or rolling windows (backdays).
 - 💾 **State Persistence**: SQLite database tracks progress to avoid duplicate work.
 - ⏱️ **Respectful Archiving**: Built-in rate limiting for Wayback Machine.
 - 🌐 **Cloud Dashboard**: Syncs results to a [live dashboard](https://yellowcandle--mingpao-archiver-dashboard.modal.run).
@@ -115,6 +120,12 @@ uv sync
 
 # Run the archiver
 uv run python mingpao_hkga_archiver.py --backdays 7
+
+# Archive multiple non-consecutive dates
+uv run python mingpao_hkga_archiver.py --dates "2025-01-15,2025-01-20,2025-01-25"
+
+# Archive with keywords and daily limit
+uv run python mingpao_hkga_archiver.py --dates "2025-01-15,2025-01-20" --enable-keywords --keyword "香港" --daily-limit 10
 ```
 
 ## 📄 License
