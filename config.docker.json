@@ -7,11 +7,11 @@
     "file": "/logs/hkga_archiver.log"
   },
   "archiving": {
-    "rate_limit_delay": 3,
+    "rate_limit_delay": 8,
     "verify_first": true,
-    "timeout": 30,
-    "max_retries": 3,
-    "retry_delay": 10
+    "timeout": 120,
+    "max_retries": 5,
+    "retry_delay": 20
   },
   "daily_limit": 2000,
   "use_newspaper": false,
