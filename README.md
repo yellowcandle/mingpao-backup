@@ -2,7 +2,7 @@
 
 > 將明報加拿大網站的港聞文章存檔至 Internet Archive Wayback Machine，保存香港歷史新聞記錄
 
-## ⚠️ 重要提示：請優先使用 S3 直接存檔版本
+## ⚠️ 如果你係 tech 人，可以幫手行咗 S3 直接存檔版本先
 
 **強烈建議優先使用姐妹項目 [mingpao-backup-s3](https://github.com/yellowcandle/mingpao-backup-s3)**，它直接透過 Internet Archive 的 S3 API 存檔，更穩定且無 Wayback Machine 速率限制。
 
