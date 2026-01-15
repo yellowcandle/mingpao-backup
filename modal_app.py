@@ -17,12 +17,13 @@ Usage:
     modal logs mingpao-archiver
 """
 
-import modal
-import sys
 import os
+import sys
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
-from datetime import datetime, date, timedelta
+
+import modal
 from wayback import WaybackClient, CdxRecord
 
 # --- PRIORITY RANGES CONFIGURATION ---
@@ -1321,9 +1322,6 @@ def generate_coverage_section(coverage: dict) -> str:
     if not coverage:
         return ""
 
-    total_days = coverage["total_days"]
-    archived_days = coverage["archived_days"]
-    coverage_pct = coverage["coverage_pct"]
     year_coverage = coverage["year_coverage"]
     missing_ranges = coverage["missing_ranges"]
 
@@ -1517,14 +1515,13 @@ def dashboard():
     """
     import sqlite3
     from datetime import datetime
-    from fastapi.responses import HTMLResponse
 
     db_path = "/data/hkga_archive.db"
 
     try:
         # Check if database exists
         if not os.path.exists(db_path):
-            return HTMLResponse(content=build_empty_dashboard())
+            return build_empty_dashboard()
 
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
@@ -1550,7 +1547,7 @@ def dashboard():
             coverage=date_coverage,
         )
 
-        return HTMLResponse(content=html)
+        return html
 
     except Exception as e:
         import traceback
@@ -1592,7 +1589,7 @@ def dashboard():
 </body>
 </html>
 """
-        return HTMLResponse(content=error_html, status_code=500)
+        return error_html
 
 
 @app.function(
@@ -1722,12 +1719,12 @@ def backfill_titles(
     updated = 0
     failed = 0
 
-    for i, (record_id, url, date, status) in enumerate(articles):
+    for i, (record_id, url, _, _) in enumerate(articles):
         print(f"[{i + 1}/{total}] Processing: {url}")
 
         try:
             # Fetch HTML and extract title
-            html, from_wayback = archiver.fetch_html_content(url, timeout=30)
+            html, _ = archiver.fetch_html_content(url, timeout=30)
 
             if html:
                 title = archiver.extract_title_from_html(html)
@@ -1749,10 +1746,10 @@ def backfill_titles(
                     print(f"  ✅ Title: {title[:60]}...")
                 else:
                     failed += 1
-                    print(f"  ⚠️ Could not extract title from HTML")
+                    print("  ⚠️ Could not extract title from HTML")
             else:
                 failed += 1
-                print(f"  ❌ Could not fetch HTML")
+                print("  ❌ Could not fetch HTML")
 
         except Exception as e:
             failed += 1

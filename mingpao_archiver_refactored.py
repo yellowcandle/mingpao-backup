@@ -76,6 +76,22 @@ class MingPaoArchiver:
 
     BASE_URL = "http://www.mingpaocanada.com/tor"
 
+    # Pre-compiled regex patterns for title extraction (OPTIMIZATION)
+    ARTICLE_TITLE_PATTERN = re.compile(
+        r'<h3[^>]*class="[^"]*article-title[^"]*"[^>]*>(.*?)</h3>',
+        re.IGNORECASE | re.DOTALL,
+    )
+    OG_TITLE_PATTERN = re.compile(
+        r'<meta\s+property="og:title"\s+content="([^"]+)"',
+        re.IGNORECASE,
+    )
+    TITLE_TAG_PATTERN = re.compile(
+        r"<title[^>]*>([^<]+)</title>",
+        re.IGNORECASE,
+    )
+    HTML_TAG_CLEANUP_PATTERN = re.compile(r"<[^>]+>")
+    WHITESPACE_CLEANUP_PATTERN = re.compile(r"[\s\n\r\t]+")
+
     def __init__(self, config_path: str = "config.json"):
         """Initialize the archiver with all components"""
         self.config = self.load_config(config_path)
@@ -292,44 +308,33 @@ class MingPaoArchiver:
         return "", False
 
     def extract_title_from_html(self, html: str) -> str:
-        """Extract title from HTML (encoding handled by _decode_response)"""
+        """Extract title from HTML with optimized pre-compiled regex patterns (OPTIMIZED)"""
         if not html:
             return ""
 
         try:
-            import re
-
-            # Try article-title h3 first (Ming Pao specific)
-            # Handle whitespace/newlines around the title
-            article_title_match = re.search(
-                r'<h3[^>]*class="[^"]*article-title[^"]*"[^>]*>(.*?)</h3>',
-                html,
-                re.IGNORECASE | re.DOTALL,
-            )
+            # Try article-title h3 first (Ming Pao specific) - pre-compiled pattern (OPTIMIZATION)
+            article_title_match = self.ARTICLE_TITLE_PATTERN.search(html)
             if article_title_match:
                 title = article_title_match.group(1)
-                title = re.sub(r"<[^>]+>", "", title)  # Remove any inner HTML tags
-                title = re.sub(r"[\s\n\r\t]+", " ", title).strip()  # Normalize all whitespace
+                title = self.HTML_TAG_CLEANUP_PATTERN.sub("", title)  # Remove any inner HTML tags
+                title = self.WHITESPACE_CLEANUP_PATTERN.sub(" ", title).strip()  # Normalize whitespace
                 if title and len(title) > 5:  # Ensure we have actual content
                     return self.keyword_filter.normalize_cjkv_text(title)
 
-            # Try og:title
-            og_title_match = re.search(
-                r'<meta\s+property="og:title"\s+content="([^"]+)"',
-                html,
-                re.IGNORECASE,
-            )
+            # Try og:title - pre-compiled pattern (OPTIMIZATION)
+            og_title_match = self.OG_TITLE_PATTERN.search(html)
             if og_title_match:
                 title = og_title_match.group(1)
                 # Skip generic site title
                 if "明報新聞網" not in title or len(title) > 50:
                     return self.keyword_filter.normalize_cjkv_text(title.strip())
 
-            # Fallback to <title> tag
-            title_match = re.search(r"<title[^>]*>([^<]+)</title>", html, re.IGNORECASE)
+            # Fallback to <title> tag - pre-compiled pattern (OPTIMIZATION)
+            title_match = self.TITLE_TAG_PATTERN.search(html)
             if title_match:
                 title = title_match.group(1)
-                title = re.sub(r"\s+", " ", title).strip()
+                title = self.WHITESPACE_CLEANUP_PATTERN.sub(" ", title).strip()
                 # Skip generic site title
                 if "明報新聞網" not in title or len(title) > 50:
                     return self.keyword_filter.normalize_cjkv_text(title)
@@ -492,9 +497,12 @@ class MingPaoArchiver:
     def _archive_sequential(
         self, articles: List[Dict], date_str: str, mode: str
     ) -> Tuple[int, int, int]:
-        """Sequential archiving of articles"""
+        """Sequential archiving of articles with batch saves (OPTIMIZED)"""
         found = archived = failed = 0
         total = len(articles)
+        batch_records = []  # Collect records for batch insert (OPTIMIZATION)
+        batch_size = 20  # Save every 20 articles
+        html_cache = {}  # Cache HTML fetches to avoid redundant fetches (OPTIMIZATION)
 
         for i, article in enumerate(articles):
             url = article["url"]
@@ -517,11 +525,11 @@ class MingPaoArchiver:
                     title_search_only=article.get("title_search_only", False),
                     article_title=article.get("title"),
                 )
-                self.repository.save_archive_record(article_record)
+                batch_records.append(article_record)
 
                 if result:
                     archived += 1
-                    self.logger.info(
+                    self.logger.debug(
                         f"✅ {', '.join(article.get('matched_keywords', []))}: {url[:60]}..."
                     )
                 else:
@@ -530,7 +538,14 @@ class MingPaoArchiver:
                 # Extract title for all articles (prefer Wayback if available)
                 title = None
                 try:
-                    html, _ = self.fetch_html_content(url)
+                    # Check cache first (OPTIMIZATION: avoid duplicate fetches)
+                    if url in html_cache:
+                        html = html_cache[url]
+                    else:
+                        html, _ = self.fetch_html_content(url)
+                        if html:
+                            html_cache[url] = html  # Cache for potential reuse
+
                     if html:
                         title = self.extract_title_from_html(html)
                         self.logger.debug(f"Extracted title: {title[:50] if title else 'None'}...")
@@ -548,18 +563,23 @@ class MingPaoArchiver:
                     checked_wayback=True,
                     article_title=title,
                 )
-                self.repository.save_archive_record(article_record)
+                batch_records.append(article_record)
 
                 if result:
                     archived += 1
                 else:
                     failed += 1
 
+            # Batch save every N articles (OPTIMIZATION: reduces db operations)
+            if len(batch_records) >= batch_size or i == total - 1:
+                self.repository.save_archive_records_batch(batch_records)
+                batch_records = []
+
             if found >= self.config["daily_limit"]:
                 self.logger.warning(f"達到每日限制: {self.config['daily_limit']}")
                 break
 
-            if i % 10 == 0 or i == total - 1:
+            if i % 20 == 0 or i == total - 1:  # Log every 20 articles (OPTIMIZED: was every 10)
                 self.logger.info(f"進度: {i + 1}/{total} 篇已處理...")
 
         return found, archived, failed

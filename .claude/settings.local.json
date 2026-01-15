@@ -30,7 +30,8 @@
       "Bash(modal run:*)",
       "Bash(python3:*)",
       "Bash(grep:*)",
-      "Bash(timeout 30 uv run:*)"
+      "Bash(timeout 30 uv run:*)",
+      "Bash(wc:*)"
     ]
   }
 }

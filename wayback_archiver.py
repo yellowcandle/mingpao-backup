@@ -11,6 +11,7 @@ Handles saving URLs to Internet Archive Wayback Machine using:
 
 import time
 import threading
+import random
 from typing import Dict, Optional, Callable
 import logging
 
@@ -266,11 +267,22 @@ class WaybackArchiver:
 
             if is_timeout or is_connection_error:
                 if retry_count < config["max_retries"]:
-                    # Use exponential backoff for connection errors
-                    wait_time = config["retry_delay"] * (2 ** retry_count) if is_connection_error else config["retry_delay"]
+                    # Smart backoff with jitter and capping (OPTIMIZATION)
+                    if is_connection_error:
+                        # Exponential backoff for connection errors, capped at 60s
+                        base_wait = config["retry_delay"] * (2 ** retry_count)
+                        wait_time = min(base_wait, 60)  # Cap at 60 seconds
+                    else:
+                        # For timeouts, shorter wait times with quick retry
+                        wait_time = config["retry_delay"] * (1 + 0.5 * retry_count)  # 10s, 15s, 20s, ...
+
+                    # Add jitter to prevent thundering herd (OPTIMIZATION)
+                    jitter = random.uniform(0.8, 1.2)
+                    wait_time = wait_time * jitter
+
                     error_type = "連線錯誤" if is_connection_error else "存檔超時"
                     self.logger.warning(
-                        f"{'🔌' if is_connection_error else '⏱️'} {error_type}，等待 {wait_time}s 後重試 {retry_count + 1}/{config['max_retries']}: {url}"
+                        f"{'🔌' if is_connection_error else '⏱️'} {error_type}，等待 {wait_time:.1f}s 後重試 {retry_count + 1}/{config['max_retries']}: {url}"
                     )
                     time.sleep(wait_time)
                     return self.archive_url(url, config, retry_count + 1)
