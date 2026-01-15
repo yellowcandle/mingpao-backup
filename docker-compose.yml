@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   archiver:
     build:
@@ -21,14 +19,4 @@ services:
     volumes:
       - ./data:/data
     entrypoint: ["python", "-c"]
-    command: |
-      import sqlite3
-      conn = sqlite3.connect('/data/hkga_archive.db')
-      c = conn.cursor()
-      c.execute('SELECT status, COUNT(*) FROM archive_records GROUP BY status')
-      print('Archive Statistics:')
-      for status, count in c.fetchall():
-          print(f'  {status}: {count}')
-      c.execute('SELECT COUNT(DISTINCT archive_date) FROM archive_records')
-      print(f'  Days processed: {c.fetchone()[0]}')
-      conn.close()
+    command: "import sqlite3; conn = sqlite3.connect('/data/hkga_archive.db'); c = conn.cursor(); c.execute('SELECT status, COUNT(*) FROM archive_records GROUP BY status'); print('Archive Statistics:'); [print(f'  {s}: {n}') for s, n in c.fetchall()]; c.execute('SELECT COUNT(DISTINCT archive_date) FROM archive_records'); print(f'  Days processed: {c.fetchone()[0]}'); conn.close()"
