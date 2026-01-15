@@ -866,6 +866,8 @@ class MingPaoHKGAArchiver:
                 or "429" in error_str
                 or "too many" in error_str
                 or "403" in error_str
+                or "limit" in error_str
+                or "refused" in error_str
             ):
                 self.logger.warning(f"🚫 Rate limited: {url}")
                 with self.stats_lock:
