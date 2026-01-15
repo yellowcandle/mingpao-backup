@@ -1316,6 +1316,50 @@ class MingPaoHKGAArchiver:
             target_date, mode="all", parallel=use_parallel
         )
 
+    def archive_multiple_dates(self, dates: List[datetime]):
+        """存檔多個指定日期的所有文章"""
+        self.logger.info(f"{'=' * 80}")
+        self.logger.info(f"批次存檔: {len(dates)} 個指定日期")
+        date_strs = [d.strftime("%Y-%m-%d") for d in dates]
+        self.logger.info(f"日期: {', '.join(date_strs)}")
+        self.logger.info(f"{'=' * 80}")
+
+        overall = {"days": 0, "found": 0, "archived": 0, "failed": 0}
+
+        for i, target_date in enumerate(dates, 1):
+            self.logger.info(
+                f"處理第 {i}/{len(dates)} 個日期: {target_date.strftime('%Y-%m-%d')}"
+            )
+            try:
+                result = self.archive_date(target_date)
+                if result:
+                    overall["days"] += 1
+                    overall["found"] += result.get("found", 0)
+                    overall["archived"] += result.get("archived", 0)
+                    overall["failed"] += result.get("failed", 0)
+
+                # 添加日期間的延遲
+                if i < len(dates):
+                    delay = self.config.get("rate_limit_delay", 2.0)
+                    self.logger.info(f"等待 {delay} 秒後處理下一個日期...")
+                    time.sleep(delay)
+
+            except Exception as e:
+                self.logger.error(
+                    f"處理日期 {target_date.strftime('%Y-%m-%d')} 時發生錯誤: {str(e)}"
+                )
+                overall["failed"] += 1
+
+        self.logger.info(f"{'=' * 80}")
+        self.logger.info("多日期存檔完成")
+        self.logger.info(f"處理天數: {overall['days']}")
+        self.logger.info(f"找到文章: {overall['found']}")
+        self.logger.info(f"成功存檔: {overall['archived']}")
+        self.logger.info(f"失敗項目: {overall['failed']}")
+        self.logger.info(f"{'=' * 80}")
+
+        return overall
+
     def archive_date_range(self, start_date: datetime, end_date: datetime):
         """存檔指定日期範圍內的所有文章"""
         self.logger.info(f"{'=' * 80}")
@@ -1718,6 +1762,9 @@ def main():
   # 存檔單一日期
   python run_archiver.py --date 2025-01-12
 
+  # 存檔多個非連續日期
+  python run_archiver.py --dates "2025-01-12,2025-01-15,2025-01-20"
+
   # 存檔日期範圍
   python run_archiver.py --start 2025-01-01 --end 2025-01-31
 
@@ -1733,6 +1780,9 @@ def main():
         "--config", default="config.json", help="配置文件路徑 (默認: config.json)"
     )
     parser.add_argument("--date", help="存檔指定日期 (格式: YYYY-MM-DD)")
+    parser.add_argument(
+        "--dates", help="存檔多個日期 (逗號分隔，格式: YYYY-MM-DD,YYYY-MM-DD)"
+    )
     parser.add_argument("--start", help="開始日期 (格式: YYYY-MM-DD)")
     parser.add_argument("--end", help="結束日期 (格式: YYYY-MM-DD)")
     parser.add_argument("--backdays", type=int, help="從今天開始回溯 N 天")
@@ -1793,6 +1843,22 @@ def main():
 
     args = parser.parse_args()
 
+    # 驗證日期參數不衝突
+    date_args = [
+        bool(args.date),
+        bool(args.dates),
+        bool(args.start),
+        bool(args.end),
+        bool(args.backdays),
+    ]
+    if sum(date_args) > 2:
+        parser.error(
+            "只能使用一種日期指定方式: --date, --dates, --start/--end, 或 --backdays"
+        )
+
+    if args.dates and (args.start or args.end or args.backdays):
+        parser.error("--dates 不能與 --start, --end, 或 --backdays 同時使用")
+
     # 創建存檔器實例
     archiver = MingPaoHKGAArchiver(args.config)
 
@@ -1851,6 +1917,12 @@ def main():
         elif args.start and args.end:
             start_date = parse_date(args.start)
             end_date = parse_date(args.end)
+        elif args.dates:
+            # 對於多個日期，使用最早和最晚日期作為範圍
+            date_strings = [d.strip() for d in args.dates.split(",")]
+            target_dates = [parse_date(d) for d in date_strings]
+            start_date = min(target_dates)
+            end_date = max(target_dates)
         elif args.date:
             start_date = parse_date(args.date)
             end_date = start_date
@@ -1886,7 +1958,20 @@ def main():
     # 處理日期參數
     today = datetime.now()
 
-    if args.date:
+    if args.dates:
+        # 存檔多個指定日期
+        try:
+            date_strings = [d.strip() for d in args.dates.split(",")]
+            target_dates = []
+            for date_str in date_strings:
+                target_date = parse_date(date_str)
+                target_dates.append(target_date)
+            archiver.logger.info(f"存檔 {len(target_dates)} 個指定日期")
+            archiver.archive_multiple_dates(target_dates)
+        except Exception as e:
+            print(f"執行錯誤: {str(e)}")
+            return
+    elif args.date:
         # 存檔單一日期
         target_date = parse_date(args.date)
         archiver.logger.info(f"存檔單一日期: {target_date.strftime('%Y-%m-%d')}")

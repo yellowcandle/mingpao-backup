@@ -21,6 +21,9 @@ uv sync
 # Run basic archiving
 uv run python mingpao_hkga_archiver.py --backdays 7
 
+# Archive multiple specific dates
+uv run python mingpao_hkga_archiver.py --dates "2024-01-15,2024-01-20,2024-01-25"
+
 # Run with keywords
 uv run python mingpao_hkga_archiver.py --enable-keywords --keyword "香港" --keyword "政治" --backdays 3
 ```
@@ -140,6 +143,7 @@ CREATE TABLE daily_progress (
 | Flag | Description |
 |------|-------------|
 | `--date YYYY-MM-DD` | Archive single date |
+| `--dates "D1,D2,D3"` | Archive multiple non-consecutive dates (comma-separated) |
 | `--start YYYY-MM-DD` | Start date for range |
 | `--end YYYY-MM-DD` | End date for range |
 | `--backdays N` | Archive last N days |
