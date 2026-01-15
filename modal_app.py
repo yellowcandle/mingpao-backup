@@ -1216,38 +1216,103 @@ def generate_trends_rows(trends) -> str:
 
 
 def generate_volunteer_guide() -> str:
-    """Generate the volunteer quick start guide section"""
+    """Generate the volunteer quick start guide section with copy-to-clipboard buttons"""
     return """
         <section class="card" style="margin-top: 24px;">
             <h2 class="section-title">🤝 Help Archive</h2>
             <p style="margin-bottom: 16px; color: var(--text-muted); font-size: 14px;">
-                Run a Docker container locally to help archive historical articles.
+                Run Docker commands locally to help archive historical articles.
             </p>
 
-            <div style="background: #0f172a; border-radius: 8px; padding: 12px; margin-bottom: 16px; border: 1px solid var(--border);">
-                <pre style="overflow-x: auto; font-size: 11px; line-height: 1.5;"><code style="color: #94a3b8;"># Quick Start
-git clone https://github.com/yellowcandle/mingpao-backup.git
+            <!-- Setup Commands -->
+            <div style="margin-bottom: 16px;">
+                <h3 style="font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--text-main);">Initial Setup</h3>
+                <div class="code-block-with-copy" style="background: #0f172a; border-radius: 8px; padding: 12px; border: 1px solid var(--border); position: relative;">
+                    <pre style="overflow-x: auto; font-size: 11px; line-height: 1.5; margin: 0;"><code style="color: #94a3b8;">git clone https://github.com/yellowcandle/mingpao-backup.git
 cd mingpao-backup
-docker build -t mingpao-archiver .
-
-# Archive a date range
-docker run -v $(pwd)/data:/data -v $(pwd)/logs:/logs \\
-  mingpao-archiver --start 2015-01-01 --end 2015-03-31</code></pre>
+docker build -t mingpao-archiver .</code></pre>
+                    <button class="copy-btn" onclick="copyToClipboard(this, 'git clone https://github.com/yellowcandle/mingpao-backup.git\\ncd mingpao-backup\\ndocker build -t mingpao-archiver .')" 
+                            style="position: absolute; top: 8px; right: 8px; padding: 4px 8px; background: var(--primary); color: white; border: none; border-radius: 4px; font-size: 11px; cursor: pointer;">
+                        📋 Copy
+                    </button>
+                </div>
             </div>
 
+            <!-- Archive Date Range Commands -->
+            <div style="margin-bottom: 16px;">
+                <h3 style="font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--text-main);">Archive Date Range</h3>
+                <div class="code-block-with-copy" style="background: #0f172a; border-radius: 8px; padding: 12px; border: 1px solid var(--border); position: relative;">
+                    <pre style="overflow-x: auto; font-size: 11px; line-height: 1.5; margin: 0;"><code style="color: #94a3b8;">docker run -v $(pwd)/data:/data -v $(pwd)/logs:/logs \\
+  mingpao-archiver --start YYYY-MM-DD --end YYYY-MM-DD</code></pre>
+                    <button class="copy-btn" onclick="copyToClipboard(this, 'docker run -v $(pwd)/data:/data -v $(pwd)/logs:/logs mingpao-archiver --start YYYY-MM-DD --end YYYY-MM-DD')" 
+                            style="position: absolute; top: 8px; right: 8px; padding: 4px 8px; background: var(--primary); color: white; border: none; border-radius: 4px; font-size: 11px; cursor: pointer;">
+                        📋 Copy
+                    </button>
+                </div>
+                <p style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">Replace YYYY-MM-DD with actual dates (e.g., 2019-01-01)</p>
+            </div>
+
+            <!-- Archive Specific Dates -->
+            <div style="margin-bottom: 16px;">
+                <h3 style="font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--text-main);">Archive Specific Dates</h3>
+                <div class="code-block-with-copy" style="background: #0f172a; border-radius: 8px; padding: 12px; border: 1px solid var(--border); position: relative;">
+                    <pre style="overflow-x: auto; font-size: 11px; line-height: 1.5; margin: 0;"><code style="color: #94a3b8;">docker run -v $(pwd)/data:/data -v $(pwd)/logs:/logs \\
+  mingpao-archiver --dates "2019-06-04,2019-07-21,2019-08-31"</code></pre>
+                    <button class="copy-btn" onclick="copyToClipboard(this, 'docker run -v $(pwd)/data:/data -v $(pwd)/logs:/logs mingpao-archiver --dates \"2019-06-04,2019-07-21,2019-08-31\"')" 
+                            style="position: absolute; top: 8px; right: 8px; padding: 4px 8px; background: var(--primary); color: white; border: none; border-radius: 4px; font-size: 11px; cursor: pointer;">
+                        📋 Copy
+                    </button>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                 <a href="https://github.com/yellowcandle/mingpao-backup/issues/new?template=archive-claim.yml"
                    target="_blank"
                    style="flex: 1; text-align: center; padding: 8px; background: var(--success); color: white; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 600;">
-                    📋 Claim Range
+                     📋 Claim Range
                 </a>
                 <a href="https://github.com/yellowcandle/mingpao-backup"
                    target="_blank"
                    style="flex: 1; text-align: center; padding: 8px; background: var(--border); color: white; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 600;">
-                    ⭐ GitHub
+                     ⭐ GitHub
                 </a>
             </div>
         </section>
+
+        <script>
+        function copyToClipboard(button, text) {
+            // Copy text to clipboard
+            navigator.clipboard.writeText(text).then(() => {
+                // Show confirmation
+                const originalText = button.innerText;
+                button.innerText = '✅ Copied!';
+                button.style.background = 'var(--success)';
+                
+                // Reset after 2 seconds
+                setTimeout(() => {
+                    button.innerText = originalText;
+                    button.style.background = 'var(--primary)';
+                }, 2000);
+            }).catch(() => {
+                // Fallback: select and copy
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                
+                const originalText = button.innerText;
+                button.innerText = '✅ Copied!';
+                button.style.background = 'var(--success)';
+                setTimeout(() => {
+                    button.innerText = originalText;
+                    button.style.background = 'var(--primary)';
+                }, 2000);
+            });
+        }
+        </script>
     """
 
 
