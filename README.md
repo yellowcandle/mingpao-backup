@@ -2,6 +2,44 @@
 
 > 將明報加拿大網站的港聞文章存檔至 Internet Archive Wayback Machine，保存香港歷史新聞記錄
 
+## ⚠️ 重要提示：請優先使用 S3 直接存檔版本
+
+**強烈建議優先使用姐妹項目 [mingpao-backup-s3](https://github.com/yellowcandle/mingpao-backup-s3)**，它直接透過 Internet Archive 的 S3 API 存檔，更穩定且無 Wayback Machine 速率限制。
+
+### 為什麼選擇 S3 版本？
+
+| 特性 | **S3 版本 (推薦)** | **Wayback 版本** |
+|------|-------------------|------------------|
+| **存檔方式** | 直接上傳至 IA S3 | 透過 Wayback Machine API |
+| **速率限制** | 無限制 | 嚴格限制 (~15-20 請求/分鐘) |
+| **穩定性** | 高穩定性，連線問題少 | 容易遇到連線重置問題 |
+| **可靠性** | 立即完成，直接可存取 | 可能需要等待排隊處理 |
+| **並行處理** | 支援高並行上傳 | 限制並行請求 |
+| **組織方式** | 按月份自動組織 | 單篇文章存檔 |
+
+### 快速切換到 S3 版本
+
+```bash
+# 克隆 S3 版本
+git clone https://github.com/yellowcandle/mingpao-backup-s3.git
+cd mingpao-backup-s3
+
+# 設定 IA S3 金鑰 (需要在 archive.org/account/s3.php 取得)
+cp .env.example .env
+# 編輯 .env 填入你的金鑰
+
+# 直接執行
+docker compose up --build
+```
+
+### 何時仍使用 Wayback 版本？
+
+- **學習目的**：了解 Wayback Machine API 運作方式
+- **小規模測試**：只需要存檔少量文章
+- **無法取得 IA S3 金鑰**：Wayback 版本無需額外權限
+
+---
+
 ## 🚀 Quick Start with Docker
 
 The easiest way to run the archiver is using Docker.
