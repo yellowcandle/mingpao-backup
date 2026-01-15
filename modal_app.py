@@ -310,6 +310,7 @@ def get_stats():
 # Dashboard Helper Functions
 # ============================================================================
 
+
 def format_duration(seconds) -> str:
     """Format seconds into human-readable duration"""
     if not seconds:
@@ -390,13 +391,15 @@ def get_overall_stats(cursor) -> dict:
     exists = status_counts.get("exists", 0)
     archived = success + exists
 
-    failed = sum([
-        status_counts.get("failed", 0),
-        status_counts.get("error", 0),
-        status_counts.get("timeout", 0),
-        status_counts.get("rate_limited", 0),
-        status_counts.get("unknown", 0)
-    ])
+    failed = sum(
+        [
+            status_counts.get("failed", 0),
+            status_counts.get("error", 0),
+            status_counts.get("timeout", 0),
+            status_counts.get("rate_limited", 0),
+            status_counts.get("unknown", 0),
+        ]
+    )
 
     cursor.execute("SELECT COUNT(*) FROM daily_progress")
     days = cursor.fetchone()[0]
@@ -406,7 +409,7 @@ def get_overall_stats(cursor) -> dict:
         "archived": archived,
         "failed": failed,
         "success_rate": f"{(archived / total * 100):.1f}%" if total > 0 else "0%",
-        "days": days
+        "days": days,
     }
 
 
@@ -438,16 +441,18 @@ def get_active_batches(cursor) -> list:
         total = row[5] + row[6]  # archived + failed
         progress = (row[5] / total * 100) if total > 0 else 0
 
-        batches.append({
-            "id": row[0],
-            "date_range": f"{row[1]} to {row[2]}",
-            "status": row[3],
-            "archived": row[5],
-            "failed": row[6],
-            "total": total,
-            "progress": progress,
-            "duration": format_duration(row[8])
-        })
+        batches.append(
+            {
+                "id": row[0],
+                "date_range": f"{row[1]} to {row[2]}",
+                "status": row[3],
+                "archived": row[5],
+                "failed": row[6],
+                "total": total,
+                "progress": progress,
+                "duration": format_duration(row[8]),
+            }
+        )
 
     return batches
 
@@ -467,7 +472,7 @@ def get_recent_archives(cursor) -> list:
             "date": row[1],
             "status": row[2],
             "title": row[3] or "Untitled",
-            "timestamp": row[4]
+            "timestamp": row[4],
         }
         for row in cursor.fetchall()
     ]
@@ -488,7 +493,7 @@ def get_daily_trends(cursor) -> list:
             "found": row[1],
             "archived": row[2],
             "failed": row[3],
-            "duration": format_duration(row[4])
+            "duration": format_duration(row[4]),
         }
         for row in cursor.fetchall()
     ]
@@ -516,17 +521,19 @@ def get_date_coverage(cursor) -> dict:
 
     for i in range(total_days):
         check_date = start_date + timedelta(days=i)
-        date_str = check_date.strftime('%Y-%m-%d')
+        date_str = check_date.strftime("%Y-%m-%d")
         year = check_date.year
 
         if year not in year_coverage:
-            year_coverage[year] = {'total': 0, 'archived': 0}
-        year_coverage[year]['total'] += 1
+            year_coverage[year] = {"total": 0, "archived": 0}
+        year_coverage[year]["total"] += 1
 
         if date_str in archived_dates:
-            year_coverage[year]['archived'] += 1
+            year_coverage[year]["archived"] += 1
             if current_missing_start:
-                missing_ranges.append((current_missing_start, check_date - timedelta(days=1)))
+                missing_ranges.append(
+                    (current_missing_start, check_date - timedelta(days=1))
+                )
                 current_missing_start = None
         else:
             if not current_missing_start:
@@ -536,17 +543,30 @@ def get_date_coverage(cursor) -> dict:
         missing_ranges.append((current_missing_start, end_date))
 
     return {
-        'total_days': total_days,
-        'archived_days': len(archived_dates),
-        'coverage_pct': len(archived_dates) / total_days * 100 if total_days > 0 else 0,
-        'year_coverage': year_coverage,
-        'missing_ranges': missing_ranges[:10]  # Limit to 10 ranges for display
+        "total_days": total_days,
+        "archived_days": len(archived_dates),
+        "coverage_pct": len(archived_dates) / total_days * 100 if total_days > 0 else 0,
+        "year_coverage": year_coverage,
+        "missing_ranges": missing_ranges[:10],  # Limit to 10 ranges for display
     }
 
 
 def generate_css() -> str:
     """Generate inline CSS for dashboard"""
     return """
+        :root {
+            --bg-main: #0f172a;
+            --bg-card: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --primary: #3b82f6;
+            --success: #22c55e;
+            --error: #ef4444;
+            --warning: #f59e0b;
+            --info: #06b6d4;
+            --border: #334155;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -554,220 +574,270 @@ def generate_css() -> str:
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: #f5f5f5;
-            color: #333;
-            line-height: 1.6;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
-            padding: 20px;
+            padding: 24px;
         }
 
         header {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 32px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--border);
         }
 
         h1 {
-            font-size: 28px;
-            margin-bottom: 10px;
+            font-size: 24px;
+            font-weight: 800;
+            background: linear-gradient(to right, #60a5fa, #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
 
         .refresh-bar {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            margin-top: 10px;
+            gap: 16px;
         }
 
         button {
-            background: #007bff;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
+            background: var(--bg-card);
+            color: var(--text-main);
+            border: 1px solid var(--border);
+            padding: 8px 16px;
+            border-radius: 8px;
             cursor: pointer;
             font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
         button:hover {
-            background: #0056b3;
+            background: var(--border);
+            transform: translateY(-1px);
         }
 
         .timestamp {
-            color: #666;
-            font-size: 14px;
+            color: var(--text-muted);
+            font-size: 13px;
         }
 
-        .summary-cards {
+        .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
+            gap: 24px;
+        }
+
+        .grid-stats {
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        }
+
+        .grid-main {
+            grid-template-columns: 2fr 1fr;
         }
 
         .card {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            text-align: center;
+            background: var(--bg-card);
+            padding: 24px;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
         }
 
-        .card.success {
-            border-left: 4px solid #28a745;
+        .stat-card {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
 
-        .card.error {
-            border-left: 4px solid #dc3545;
-        }
-
-        .card-value {
+        .stat-value {
             font-size: 32px;
-            font-weight: bold;
-            margin-bottom: 5px;
+            font-weight: 700;
+            color: var(--text-main);
         }
 
-        .card-label {
-            color: #666;
+        .stat-label {
+            color: var(--text-muted);
             font-size: 14px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
         }
 
-        .section {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
+        .stat-card.primary .stat-value { color: var(--primary); }
+        .stat-card.success .stat-value { color: var(--success); }
+        .stat-card.error .stat-value { color: var(--error); }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
             margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-main);
         }
 
-        h2 {
-            font-size: 20px;
-            margin-bottom: 15px;
-            border-bottom: 2px solid #f0f0f0;
-            padding-bottom: 10px;
+        .progress-container {
+            margin-bottom: 20px;
         }
 
-        .status-bar {
-            margin-bottom: 15px;
-        }
-
-        .status-label {
+        .progress-label {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
             font-size: 14px;
+            color: var(--text-muted);
         }
 
-        .bar {
-            height: 25px;
-            background: #e0e0e0;
-            border-radius: 5px;
+        .progress-bar {
+            height: 12px;
+            background: #334155;
+            border-radius: 6px;
             overflow: hidden;
         }
 
-        .bar-fill {
+        .progress-fill {
             height: 100%;
-            transition: width 0.3s ease;
+            border-radius: 6px;
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        .bar-fill.success { background: #28a745; }
-        .bar-fill.exists { background: #17a2b8; }
-        .bar-fill.failed { background: #dc3545; }
-        .bar-fill.error { background: #ffc107; }
+        .progress-fill.primary { background: var(--primary); }
+        .progress-fill.success { background: var(--success); }
+        .progress-fill.error { background: var(--error); }
+        .progress-fill.warning { background: var(--warning); }
 
-        .batch-progress {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 10px;
+        .table-container {
+            overflow-x: auto;
         }
 
-        .batch-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 10px;
-        }
-
-        .batch-status {
-            display: inline-block;
-            padding: 3px 8px;
-            border-radius: 3px;
-            font-size: 12px;
-            font-weight: bold;
-        }
-
-        .batch-status.in_progress { background: #ffc107; color: #000; }
-        .batch-status.completed { background: #28a745; color: #fff; }
-        .batch-status.pending { background: #6c757d; color: #fff; }
-
-        .activity-feed {
-            max-height: 400px;
-            overflow-y: auto;
-        }
-
-        .activity-item {
-            padding: 10px;
-            border-bottom: 1px solid #f0f0f0;
+        table {
+            width: 100%;
+            border-collapse: collapse;
             font-size: 14px;
         }
 
-        .activity-item:last-child {
-            border-bottom: none;
+        th {
+            text-align: left;
+            padding: 12px;
+            color: var(--text-muted);
+            font-weight: 600;
+            border-bottom: 1px solid var(--border);
         }
 
-        .activity-url {
-            color: #007bff;
-            text-decoration: none;
-            font-family: monospace;
+        td {
+            padding: 16px 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tr:last-child td { border-bottom: none; }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+
+        .status-badge.success { background: rgba(34, 197, 94, 0.1); color: var(--success); }
+        .status-badge.exists { background: rgba(6, 182, 212, 0.1); color: var(--info); }
+        .status-badge.failed { background: rgba(239, 68, 68, 0.1); color: var(--error); }
+        .status-badge.error { background: rgba(245, 158, 11, 0.1); color: var(--warning); }
+
+        .activity-feed {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .activity-item {
+            padding: 16px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        .activity-meta {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
             font-size: 12px;
         }
 
         .activity-title {
-            color: #333;
-            margin-top: 5px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            display: block;
+            color: var(--text-main);
+            text-decoration: none;
         }
 
-        .trends-table {
-            width: 100%;
-            border-collapse: collapse;
+        .activity-title:hover { color: var(--primary); }
+
+        .activity-url {
+            color: var(--text-muted);
+            font-size: 12px;
+            font-family: monospace;
+            word-break: break-all;
         }
 
-        .trends-table th,
-        .trends-table td {
+        .coverage-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 8px;
+        }
+
+        .coverage-year {
             padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #f0f0f0;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            text-align: center;
         }
 
-        .trends-table th {
-            background: #f8f9fa;
+        .coverage-year-label {
+            font-size: 12px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .coverage-year-pct {
+            font-size: 14px;
             font-weight: 600;
         }
 
-        .trends-table tr:hover {
-            background: #f8f9fa;
+        @media (max-width: 1024px) {
+            .grid-main {
+                grid-template-columns: 1fr;
+            }
         }
 
-        @media (max-width: 768px) {
-            .summary-cards {
-                grid-template-columns: 1fr 1fr;
-            }
-
-            h1 {
-                font-size: 22px;
-            }
-
-            .refresh-bar {
+        @media (max-width: 640px) {
+            header {
                 flex-direction: column;
                 align-items: flex-start;
-                gap: 10px;
+                gap: 16px;
+            }
+            .grid-stats {
+                grid-template-columns: 1fr 1fr;
             }
         }
     """
@@ -776,15 +846,15 @@ def generate_css() -> str:
 def generate_status_bars(breakdown, total) -> str:
     """Generate status breakdown bars"""
     if total == 0:
-        return "<p>No data yet</p>"
+        return "<p class='text-muted'>No data yet</p>"
 
     status_order = [
         ("success", "Success", "success"),
-        ("exists", "Already Exists", "exists"),
-        ("failed", "Failed", "failed"),
-        ("error", "Errors", "error"),
-        ("timeout", "Timeouts", "error"),
-        ("rate_limited", "Rate Limited", "error")
+        ("exists", "Already Exists", "primary"),
+        ("failed", "Failed", "error"),
+        ("error", "Errors", "warning"),
+        ("timeout", "Timeouts", "warning"),
+        ("rate_limited", "Rate Limited", "error"),
     ]
 
     html = ""
@@ -793,16 +863,16 @@ def generate_status_bars(breakdown, total) -> str:
         if count == 0:
             continue
 
-        percentage = (count / total * 100)
+        percentage = count / total * 100
 
         html += f"""
-        <div class="status-bar">
-            <div class="status-label">
+        <div class="progress-container">
+            <div class="progress-label">
                 <span>{label}</span>
                 <span>{count:,} ({percentage:.1f}%)</span>
             </div>
-            <div class="bar">
-                <div class="bar-fill {css_class}" style="width: {percentage}%"></div>
+            <div class="progress-bar">
+                <div class="progress-fill {css_class}" style="width: {percentage}%"></div>
             </div>
         </div>
         """
@@ -812,29 +882,315 @@ def generate_status_bars(breakdown, total) -> str:
 
 def generate_batch_section(batches) -> str:
     """Generate active batch jobs section"""
-    html = '<section class="section"><h2>Active Batch Jobs</h2>'
+    if not batches:
+        return ""
+
+    html = '<section class="card" style="margin-top: 24px;"><h2 class="section-title">☁️ Cloud Batches</h2>'
 
     for batch in batches:
-        status_class = batch['status']
+        status_class = batch["status"]
         html += f"""
-        <div class="batch-progress">
-            <div class="batch-header">
-                <div>
-                    <strong>{batch['id']}</strong>
-                    <span class="batch-status {status_class}">{batch['status'].upper()}</span>
-                </div>
-                <span>{batch['date_range']}</span>
+        <div style="margin-bottom: 20px; padding: 16px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid var(--border);">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 12px; align-items: center;">
+                <span class="status-badge {status_class}">{batch["status"]}</span>
+                <span style="font-size: 12px; color: var(--text-muted);">{batch["date_range"]}</span>
             </div>
-            <div class="bar">
-                <div class="bar-fill success" style="width: {batch['progress']:.1f}%"></div>
+            <div class="progress-bar" style="height: 8px; margin-bottom: 8px;">
+                <div class="progress-fill success" style="width: {batch["progress"]:.1f}%"></div>
             </div>
-            <div style="margin-top: 5px; font-size: 14px; color: #666;">
-                {batch['archived']} / {batch['total']} articles · {batch['duration']}
+            <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted);">
+                <span>{batch["archived"]} / {batch["total"]} articles</span>
+                <span>{batch["duration"]}</span>
             </div>
         </div>
         """
 
-    html += '</section>'
+    html += "</section>"
+    return html
+
+
+def generate_recent_feed(recent, status_emoji) -> str:
+    """Generate recent activity feed"""
+    html = '<div class="activity-feed">'
+
+    for item in recent:
+        emoji = status_emoji.get(item["status"], "❓")
+        title_truncated = (
+            item["title"][:80] + "..." if len(item["title"]) > 80 else item["title"]
+        )
+
+        html += f"""
+        <div class="activity-item">
+            <div class="activity-meta">
+                <span class="status-badge {item["status"]}">{emoji} {item["status"]}</span>
+                <span style="color: var(--text-muted);">{item["date"]}</span>
+            </div>
+            <a href="{item["url"]}" target="_blank" class="activity-title">{title_truncated}</a>
+            <div class="activity-url">{item["url"]}</div>
+        </div>
+        """
+
+    html += "</div>"
+    return html
+
+
+def generate_trends_rows(trends) -> str:
+    """Generate daily trends table rows"""
+    html = ""
+
+    for trend in trends:
+        html += f"""
+        <tr>
+            <td style="font-weight: 600;">{trend["date"]}</td>
+            <td>{trend["found"]}</td>
+            <td><span style="color: var(--success);">{trend["archived"]}</span></td>
+            <td><span style="color: var(--error);">{trend["failed"]}</span></td>
+            <td style="color: var(--text-muted); font-size: 12px;">{trend["duration"]}</td>
+        </tr>
+        """
+
+    return html
+
+
+def generate_volunteer_guide() -> str:
+    """Generate the volunteer quick start guide section"""
+    return """
+        <section class="card" style="margin-top: 24px;">
+            <h2 class="section-title">🤝 Help Archive</h2>
+            <p style="margin-bottom: 16px; color: var(--text-muted); font-size: 14px;">
+                Run a Docker container locally to help archive historical articles.
+            </p>
+
+            <div style="background: #0f172a; border-radius: 8px; padding: 12px; margin-bottom: 16px; border: 1px solid var(--border);">
+                <pre style="overflow-x: auto; font-size: 11px; line-height: 1.5;"><code style="color: #94a3b8;"># Quick Start
+git clone https://github.com/yellowcandle/mingpao-backup.git
+cd mingpao-backup
+docker build -t mingpao-archiver .
+
+# Archive a date range
+docker run -v $(pwd)/data:/data -v $(pwd)/logs:/logs \\
+  mingpao-archiver --start 2015-01-01 --end 2015-03-31</code></pre>
+            </div>
+
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <a href="https://github.com/yellowcandle/mingpao-backup/issues/new?template=archive-claim.yml"
+                   target="_blank"
+                   style="flex: 1; text-align: center; padding: 8px; background: var(--success); color: white; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 600;">
+                    📋 Claim Range
+                </a>
+                <a href="https://github.com/yellowcandle/mingpao-backup"
+                   target="_blank"
+                   style="flex: 1; text-align: center; padding: 8px; background: var(--border); color: white; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 600;">
+                    ⭐ GitHub
+                </a>
+            </div>
+        </section>
+    """
+
+
+def generate_coverage_section(coverage: dict) -> str:
+    """Generate the date coverage section HTML"""
+    if not coverage:
+        return ""
+
+    total_days = coverage["total_days"]
+    archived_days = coverage["archived_days"]
+    coverage_pct = coverage["coverage_pct"]
+    year_coverage = coverage["year_coverage"]
+    missing_ranges = coverage["missing_ranges"]
+
+    # Generate year progress bars
+    year_bars = ""
+    for year in sorted(year_coverage.keys(), reverse=True):
+        data = year_coverage[year]
+        pct = (data["archived"] / data["total"] * 100) if data["total"] > 0 else 0
+        css_class = "success" if pct >= 80 else "warning" if pct >= 40 else "error"
+
+        year_bars += f"""
+            <div style="margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                    <span style="font-weight: 700;">{year}</span>
+                    <span style="color: var(--text-muted);">{pct:.0f}% ({data["archived"]}/{data["total"]})</span>
+                </div>
+                <div class="progress-bar" style="height: 6px;">
+                    <div class="progress-fill {css_class}" style="width: {pct}%"></div>
+                </div>
+            </div>
+        """
+
+    # Generate missing ranges list
+    missing_html = ""
+    for start, end in missing_ranges:
+        days = (end - start).days + 1
+        start_str = start.strftime("%Y-%m-%d")
+        end_str = end.strftime("%Y-%m-%d")
+        missing_html += f"""
+            <div style="padding: 10px; background: rgba(239, 68, 68, 0.05); border-radius: 8px; margin-bottom: 8px; border: 1px solid rgba(239, 68, 68, 0.1); font-size: 13px;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="font-weight: 600;">{start_str} → {end_str}</span>
+                    <span style="color: var(--error);">{days}d</span>
+                </div>
+            </div>
+        """
+
+    if not missing_html:
+        missing_html = '<div style="color: var(--success); font-weight: 600;">✅ All dates archived!</div>'
+
+    return f"""
+        <section class="card">
+            <h2 class="section-title">📅 Coverage By Year</h2>
+            <div style="margin-bottom: 24px;">
+                {year_bars}
+            </div>
+
+            <h3 class="section-title" style="font-size: 14px; color: var(--text-muted);">🔴 Missing Ranges (Top 10)</h3>
+            <div style="max-height: 300px; overflow-y: auto;">
+                {missing_html}
+            </div>
+        </section>
+    """
+
+
+def build_dashboard_html(
+    overall, breakdown, batches, recent, trends, timestamp, coverage=None
+) -> str:
+    """Generate complete dashboard HTML"""
+
+    # Status emoji mapping
+    status_emoji = {
+        "success": "✅",
+        "exists": "📦",
+        "failed": "❌",
+        "error": "⚠️",
+        "timeout": "⏱️",
+        "rate_limited": "🚫",
+    }
+
+    html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard | Ming Pao Archive</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        {generate_css()}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📰 Ming Pao Archive <span>Dashboard</span></h1>
+            <div class="refresh-bar">
+                <span class="timestamp">Updated {timestamp.strftime("%H:%M:%S")}</span>
+                <button onclick="location.reload()">🔄 Refresh</button>
+            </div>
+        </header>
+
+        <!-- Stats Grid -->
+        <div class="grid grid-stats" style="margin-bottom: 32px;">
+            <div class="card stat-card">
+                <span class="stat-label">Total Discovery</span>
+                <span class="stat-value">{overall["total"]:,}</span>
+            </div>
+            <div class="card stat-card success">
+                <span class="stat-label">Archived Successfully</span>
+                <span class="stat-value">{overall["archived"]:,}</span>
+            </div>
+            <div class="card stat-card error">
+                <span class="stat-label">Archive Failures</span>
+                <span class="stat-value">{overall["failed"]:,}</span>
+            </div>
+            <div class="card stat-card primary">
+                <span class="stat-label">Archive Coverage</span>
+                <span class="stat-value">{overall["success_rate"]}</span>
+            </div>
+        </div>
+
+        <div class="grid grid-main">
+            <!-- Left Column -->
+            <div class="flex-column">
+                <!-- Status Breakdown -->
+                <section class="card" style="margin-bottom: 24px;">
+                    <h2 class="section-title">📊 Status Breakdown</h2>
+                    {generate_status_bars(breakdown, overall["total"])}
+                </section>
+
+                <!-- Daily Trends -->
+                <section class="card" style="margin-bottom: 24px;">
+                    <h2 class="section-title">📈 Daily Trends</h2>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Found</th>
+                                    <th>Archived</th>
+                                    <th>Failed</th>
+                                    <th>Duration</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {generate_trends_rows(trends)}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Recent Activity -->
+                <section class="card">
+                    <h2 class="section-title">⚡ Recent Activity</h2>
+                    {generate_recent_feed(recent, status_emoji)}
+                </section>
+            </div>
+
+            <!-- Right Column -->
+            <div class="flex-column">
+                <!-- Archive Coverage -->
+                {generate_coverage_section(coverage) if coverage else ""}
+
+                <!-- Active Batches -->
+                {generate_batch_section(batches)}
+
+                <!-- Volunteer Guide -->
+                {generate_volunteer_guide()}
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+"""
+    return html
+
+
+def generate_batch_section(batches) -> str:
+    """Generate active batch jobs section"""
+    html = '<section class="section"><h2>Active Batch Jobs</h2>'
+
+    for batch in batches:
+        status_class = batch["status"]
+        html += f"""
+        <div class="batch-progress">
+            <div class="batch-header">
+                <div>
+                    <strong>{batch["id"]}</strong>
+                    <span class="batch-status {status_class}">{batch["status"].upper()}</span>
+                </div>
+                <span>{batch["date_range"]}</span>
+            </div>
+            <div class="bar">
+                <div class="bar-fill success" style="width: {batch["progress"]:.1f}%"></div>
+            </div>
+            <div style="margin-top: 5px; font-size: 14px; color: #666;">
+                {batch["archived"]} / {batch["total"]} articles · {batch["duration"]}
+            </div>
+        </div>
+        """
+
+    html += "</section>"
     return html
 
 
@@ -843,20 +1199,22 @@ def generate_recent_feed(recent, status_emoji) -> str:
     html = ""
 
     for item in recent:
-        emoji = status_emoji.get(item['status'], "❓")
-        title_truncated = item['title'][:80] + "..." if len(item['title']) > 80 else item['title']
+        emoji = status_emoji.get(item["status"], "❓")
+        title_truncated = (
+            item["title"][:80] + "..." if len(item["title"]) > 80 else item["title"]
+        )
 
         html += f"""
         <div class="activity-item">
             <div>
                 {emoji}
-                <span style="color: #666;">{item['date']}</span>
-                <span class="batch-status {item['status']}" style="margin-left: 10px;">
-                    {item['status']}
+                <span style="color: #666;">{item["date"]}</span>
+                <span class="batch-status {item["status"]}" style="margin-left: 10px;">
+                    {item["status"]}
                 </span>
             </div>
             <div class="activity-title">{title_truncated}</div>
-            <a href="{item['url']}" target="_blank" class="activity-url">{item['url']}</a>
+            <a href="{item["url"]}" target="_blank" class="activity-url">{item["url"]}</a>
         </div>
         """
 
@@ -868,15 +1226,17 @@ def generate_trends_rows(trends) -> str:
     html = ""
 
     for trend in trends:
-        success_rate = (trend['archived'] / trend['found'] * 100) if trend['found'] > 0 else 0
+        success_rate = (
+            (trend["archived"] / trend["found"] * 100) if trend["found"] > 0 else 0
+        )
 
         html += f"""
         <tr>
-            <td><strong>{trend['date']}</strong></td>
-            <td>{trend['found']}</td>
-            <td>{trend['archived']}</td>
-            <td>{trend['failed']}</td>
-            <td>{trend['duration']}</td>
+            <td><strong>{trend["date"]}</strong></td>
+            <td>{trend["found"]}</td>
+            <td>{trend["archived"]}</td>
+            <td>{trend["failed"]}</td>
+            <td>{trend["duration"]}</td>
         </tr>
         """
 
@@ -933,17 +1293,17 @@ def generate_coverage_section(coverage: dict) -> str:
     if not coverage:
         return ""
 
-    total_days = coverage['total_days']
-    archived_days = coverage['archived_days']
-    coverage_pct = coverage['coverage_pct']
-    year_coverage = coverage['year_coverage']
-    missing_ranges = coverage['missing_ranges']
+    total_days = coverage["total_days"]
+    archived_days = coverage["archived_days"]
+    coverage_pct = coverage["coverage_pct"]
+    year_coverage = coverage["year_coverage"]
+    missing_ranges = coverage["missing_ranges"]
 
     # Generate year progress bars
     year_bars = ""
     for year in sorted(year_coverage.keys()):
         data = year_coverage[year]
-        pct = (data['archived'] / data['total'] * 100) if data['total'] > 0 else 0
+        pct = (data["archived"] / data["total"] * 100) if data["total"] > 0 else 0
         color = "#22c55e" if pct >= 80 else "#eab308" if pct >= 40 else "#ef4444"
         year_bars += f"""
             <div style="display: flex; align-items: center; margin-bottom: 8px;">
@@ -951,7 +1311,7 @@ def generate_coverage_section(coverage: dict) -> str:
                 <div style="flex: 1; background: #374151; border-radius: 4px; height: 20px; overflow: hidden;">
                     <div style="width: {pct:.1f}%; height: 100%; background: {color};"></div>
                 </div>
-                <span style="width: 80px; text-align: right; margin-left: 10px;">{pct:.0f}% ({data['archived']}/{data['total']})</span>
+                <span style="width: 80px; text-align: right; margin-left: 10px;">{pct:.0f}% ({data["archived"]}/{data["total"]})</span>
             </div>
         """
 
@@ -959,8 +1319,8 @@ def generate_coverage_section(coverage: dict) -> str:
     missing_html = ""
     for start, end in missing_ranges:
         days = (end - start).days + 1
-        start_str = start.strftime('%Y-%m-%d')
-        end_str = end.strftime('%Y-%m-%d')
+        start_str = start.strftime("%Y-%m-%d")
+        end_str = end.strftime("%Y-%m-%d")
         missing_html += f"""
             <div style="padding: 8px 12px; background: #1f2937; border-radius: 6px; margin-bottom: 6px;">
                 <span style="color: #f87171;">●</span>
@@ -978,7 +1338,7 @@ def generate_coverage_section(coverage: dict) -> str:
             <div style="margin-bottom: 20px;">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
                     <span>Coverage: {archived_days:,} / {total_days:,} days</span>
-                    <span style="font-weight: bold; color: {'#22c55e' if coverage_pct >= 80 else '#eab308' if coverage_pct >= 40 else '#ef4444'};">{coverage_pct:.1f}%</span>
+                    <span style="font-weight: bold; color: {"#22c55e" if coverage_pct >= 80 else "#eab308" if coverage_pct >= 40 else "#ef4444"};">{coverage_pct:.1f}%</span>
                 </div>
                 <div style="background: #374151; border-radius: 8px; height: 24px; overflow: hidden;">
                     <div style="width: {coverage_pct:.1f}%; height: 100%; background: linear-gradient(90deg, #22c55e, #16a34a); transition: width 0.3s;"></div>
@@ -998,7 +1358,9 @@ def generate_coverage_section(coverage: dict) -> str:
     """
 
 
-def build_dashboard_html(overall, breakdown, batches, recent, trends, timestamp, coverage=None) -> str:
+def build_dashboard_html(
+    overall, breakdown, batches, recent, trends, timestamp, coverage=None
+) -> str:
     """Generate complete dashboard HTML"""
 
     # Status emoji mapping
@@ -1008,7 +1370,7 @@ def build_dashboard_html(overall, breakdown, batches, recent, trends, timestamp,
         "failed": "❌",
         "error": "⚠️",
         "timeout": "⏱️",
-        "rate_limited": "🚫"
+        "rate_limited": "🚫",
     }
 
     html = f"""
@@ -1028,26 +1390,26 @@ def build_dashboard_html(overall, breakdown, batches, recent, trends, timestamp,
             <h1>📰 Ming Pao Archive Dashboard</h1>
             <div class="refresh-bar">
                 <button onclick="location.reload()">🔄 Refresh</button>
-                <span class="timestamp">Last updated: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}</span>
+                <span class="timestamp">Last updated: {timestamp.strftime("%Y-%m-%d %H:%M:%S")}</span>
             </div>
         </header>
 
         <!-- Summary Cards -->
         <div class="summary-cards">
             <div class="card">
-                <div class="card-value">{overall['total']:,}</div>
+                <div class="card-value">{overall["total"]:,}</div>
                 <div class="card-label">Total Articles</div>
             </div>
             <div class="card success">
-                <div class="card-value">{overall['archived']:,}</div>
-                <div class="card-label">Archived ({overall['success_rate']})</div>
+                <div class="card-value">{overall["archived"]:,}</div>
+                <div class="card-label">Archived ({overall["success_rate"]})</div>
             </div>
             <div class="card error">
-                <div class="card-value">{overall['failed']:,}</div>
+                <div class="card-value">{overall["failed"]:,}</div>
                 <div class="card-label">Failed</div>
             </div>
             <div class="card">
-                <div class="card-value">{overall['days']}</div>
+                <div class="card-value">{overall["days"]}</div>
                 <div class="card-label">Days Processed</div>
             </div>
         </div>
@@ -1055,17 +1417,17 @@ def build_dashboard_html(overall, breakdown, batches, recent, trends, timestamp,
         <!-- Status Breakdown -->
         <section class="section">
             <h2>Status Breakdown</h2>
-            {generate_status_bars(breakdown, overall['total'])}
+            {generate_status_bars(breakdown, overall["total"])}
         </section>
 
         <!-- Archive Coverage -->
-        {generate_coverage_section(coverage) if coverage else ''}
+        {generate_coverage_section(coverage) if coverage else ""}
 
         <!-- Volunteer Guide -->
         {generate_volunteer_guide()}
 
         <!-- Active Batches -->
-        {generate_batch_section(batches) if batches else ''}
+        {generate_batch_section(batches) if batches else ""}
 
         <!-- Recent Archives -->
         <section class="section">
@@ -1150,7 +1512,7 @@ def dashboard():
             recent=recent_archives,
             trends=daily_trends,
             timestamp=datetime.now(),
-            coverage=date_coverage
+            coverage=date_coverage,
         )
 
         return HTMLResponse(content=html)
@@ -1204,7 +1566,9 @@ def dashboard():
     timeout=86400,  # 24 hours for large backfills
     cpu=1,
 )
-def backfill_titles(batch_size: int = 100, rate_limit_delay: int = 3, clear_garbled: bool = False):
+def backfill_titles(
+    batch_size: int = 100, rate_limit_delay: int = 3, clear_garbled: bool = False
+):
     """
     Backfill article titles for records with NULL titles
 
@@ -1249,6 +1613,7 @@ def backfill_titles(batch_size: int = 100, rate_limit_delay: int = 3, clear_garb
     # Initialize archiver for title extraction
     config_path = "/root/config.json"
     import json
+
     with open(config_path, "r") as f:
         config = json.load(f)
 
@@ -1265,11 +1630,15 @@ def backfill_titles(batch_size: int = 100, rate_limit_delay: int = 3, clear_garb
     # Clear garbled/generic titles if requested
     if clear_garbled:
         # Count garbled titles (mojibake)
-        cursor.execute("SELECT COUNT(*) FROM archive_records WHERE article_title LIKE '%æ%'")
+        cursor.execute(
+            "SELECT COUNT(*) FROM archive_records WHERE article_title LIKE '%æ%'"
+        )
         garbled_count = cursor.fetchone()[0]
 
         # Count generic titles (site name only)
-        cursor.execute("SELECT COUNT(*) FROM archive_records WHERE article_title LIKE '%明報新聞網%' AND LENGTH(article_title) < 50")
+        cursor.execute(
+            "SELECT COUNT(*) FROM archive_records WHERE article_title LIKE '%明報新聞網%' AND LENGTH(article_title) < 50"
+        )
         generic_count = cursor.fetchone()[0]
 
         print(f"\n🧹 Found {garbled_count} garbled titles (containing 'æ')")
@@ -1285,13 +1654,16 @@ def backfill_titles(batch_size: int = 100, rate_limit_delay: int = 3, clear_garb
             print(f"✅ Cleared {cursor.rowcount} bad titles\n")
 
     # Get articles with NULL titles
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT id, article_url, archive_date, status
         FROM archive_records
         WHERE article_title IS NULL
         ORDER BY created_at DESC
         LIMIT ?
-    """, (batch_size,))
+    """,
+        (batch_size,),
+    )
 
     articles = cursor.fetchall()
     total = len(articles)
@@ -1306,7 +1678,7 @@ def backfill_titles(batch_size: int = 100, rate_limit_delay: int = 3, clear_garb
             "message": "No articles need backfill",
             "processed": 0,
             "updated": 0,
-            "failed": 0
+            "failed": 0,
         }
 
     print(f"\nFound {total} articles with NULL titles")
@@ -1316,7 +1688,7 @@ def backfill_titles(batch_size: int = 100, rate_limit_delay: int = 3, clear_garb
     failed = 0
 
     for i, (record_id, url, date, status) in enumerate(articles):
-        print(f"[{i+1}/{total}] Processing: {url}")
+        print(f"[{i + 1}/{total}] Processing: {url}")
 
         try:
             # Fetch HTML and extract title
@@ -1327,12 +1699,15 @@ def backfill_titles(batch_size: int = 100, rate_limit_delay: int = 3, clear_garb
 
                 if title:
                     # Update database
-                    cursor.execute("""
+                    cursor.execute(
+                        """
                         UPDATE archive_records
                         SET article_title = ?,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
-                    """, (title, record_id))
+                    """,
+                        (title, record_id),
+                    )
                     conn.commit()
 
                     updated += 1
@@ -1354,7 +1729,9 @@ def backfill_titles(batch_size: int = 100, rate_limit_delay: int = 3, clear_garb
 
         # Progress update every 10 articles
         if (i + 1) % 10 == 0:
-            print(f"\nProgress: {i+1}/{total} processed, {updated} updated, {failed} failed\n")
+            print(
+                f"\nProgress: {i + 1}/{total} processed, {updated} updated, {failed} failed\n"
+            )
 
     conn.close()
     archiver.close()
@@ -1365,7 +1742,7 @@ def backfill_titles(batch_size: int = 100, rate_limit_delay: int = 3, clear_garb
     print(f"Total processed: {total}")
     print(f"Titles updated: {updated}")
     print(f"Failed: {failed}")
-    print(f"Success rate: {(updated/total*100):.1f}%")
+    print(f"Success rate: {(updated / total * 100):.1f}%")
     print("=" * 60)
 
     return {
@@ -1373,7 +1750,7 @@ def backfill_titles(batch_size: int = 100, rate_limit_delay: int = 3, clear_garb
         "processed": total,
         "updated": updated,
         "failed": failed,
-        "success_rate": f"{(updated/total*100):.1f}%"
+        "success_rate": f"{(updated / total * 100):.1f}%",
     }
 
 
@@ -1594,14 +1971,37 @@ def sync_from_wayback(start_date: str, end_date: str, rate_limit_delay: float = 
 
     # URL prefixes for HK-GA articles
     HK_GA_PREFIXES = [
-        "gaa", "gab", "gac", "gad", "gae", "gaf", "gag",
-        "gba", "gbb", "gbc", "gbd", "gbe",
-        "gca", "gcb", "gcc", "gcd",
-        "gda", "gdb", "gdc",
-        "gha", "ghb", "ghc",
-        "gma", "gmb", "gmc",
-        "gna", "gnb", "gnc",
-        "goa", "gob", "goc",
+        "gaa",
+        "gab",
+        "gac",
+        "gad",
+        "gae",
+        "gaf",
+        "gag",
+        "gba",
+        "gbb",
+        "gbc",
+        "gbd",
+        "gbe",
+        "gca",
+        "gcb",
+        "gcc",
+        "gcd",
+        "gda",
+        "gdb",
+        "gdc",
+        "gha",
+        "ghb",
+        "ghc",
+        "gma",
+        "gmb",
+        "gmc",
+        "gna",
+        "gnb",
+        "gnc",
+        "goa",
+        "gob",
+        "goc",
     ]
 
     print("=" * 60)
@@ -1625,8 +2025,7 @@ def sync_from_wayback(start_date: str, end_date: str, rate_limit_delay: float = 
 
                 # Check if already in database with success/exists status
                 cursor.execute(
-                    "SELECT status FROM archive_records WHERE article_url = ?",
-                    (url,)
+                    "SELECT status FROM archive_records WHERE article_url = ?", (url,)
                 )
                 existing = cursor.fetchone()
                 if existing and existing[0] in ("success", "exists"):
@@ -1650,7 +2049,8 @@ def sync_from_wayback(start_date: str, end_date: str, rate_limit_delay: float = 
                         timestamp = closest.get("timestamp", "")
 
                         # Insert or update record
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             INSERT INTO archive_records (article_url, wayback_url, archive_date, status, checked_wayback)
                             VALUES (?, ?, ?, 'exists', 1)
                             ON CONFLICT(article_url) DO UPDATE SET
@@ -1658,7 +2058,9 @@ def sync_from_wayback(start_date: str, end_date: str, rate_limit_delay: float = 
                                 status = 'exists',
                                 checked_wayback = 1,
                                 updated_at = CURRENT_TIMESTAMP
-                        """, (url, wayback_url, date_str))
+                        """,
+                            (url, wayback_url, date_str),
+                        )
 
                         day_found += 1
                         stats["found"] += 1
@@ -1676,7 +2078,9 @@ def sync_from_wayback(start_date: str, end_date: str, rate_limit_delay: float = 
         volume.commit()
 
         if day_checked > 0:
-            print(f"  {date_display}: checked {day_checked}, found {day_found} in Wayback")
+            print(
+                f"  {date_display}: checked {day_checked}, found {day_found} in Wayback"
+            )
 
         current_date += timedelta(days=1)
 
@@ -1748,7 +2152,9 @@ def main(
     print("\nTo test the deployed app, use HTTP endpoints:")
     print("  curl https://yellowcandle--mingpao-archiver-get-stats.modal.run")
     print("\nTo trigger archiving:")
-    print("  curl -X POST https://yellowcandle--mingpao-archiver-archive-articles.modal.run \\")
+    print(
+        "  curl -X POST https://yellowcandle--mingpao-archiver-archive-articles.modal.run \\"
+    )
     print("    -H 'Content-Type: application/json' \\")
-    print("    -d '{\"mode\": \"date\", \"date\": \"2026-01-14\", \"daily_limit\": 5}'")
+    print('    -d \'{"mode": "date", "date": "2026-01-14", "daily_limit": 5}\'')
     print("=" * 60)
