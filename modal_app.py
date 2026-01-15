@@ -22,6 +22,46 @@ import sys
 import os
 from pathlib import Path
 from typing import Optional
+from datetime import datetime, date
+
+# --- PRIORITY RANGES CONFIGURATION ---
+# Edit this list to define which date ranges are high priority for volunteers
+# These will be highlighted in red on the dashboard heatmap
+PRIORITY_RANGES = [
+    {
+        "start": "2019-04-01",
+        "end": "2019-12-31",
+        "label": "2019 Apr-Dec (Hong Kong Unrest)",
+    },
+    {
+        "start": "2019-04-26",
+        "end": "2019-06-04",
+        "recurring_monthly": True,
+        "label": "Apr 26 - Jun 4 (Annual Recurring)",
+    },
+    {
+        "start": "2019-07-21",
+        "end": "2019-07-22",
+        "recurring_yearly": True,
+        "label": "Jul 21-22 (Annual Recurring from 2019)",
+    },
+    {
+        "start": "2019-08-31",
+        "end": "2019-08-31",
+        "recurring_yearly": True,
+        "label": "Aug 31 (Annual Recurring from 2019)",
+    },
+    {
+        "start": "2021-01-06",
+        "end": "2024-11-30",
+        "label": "47人案 (47 Democrats Case: Jan 6, 2021 - Nov 2024 Sentencing)",
+    },
+    {
+        "start": "2021-06-24",
+        "end": "2021-06-24",
+        "label": "蘋果日報停刊 (Apple Daily Final Issue)",
+    },
+]
 
 # Create Modal app
 app = modal.App("mingpao-archiver")
@@ -327,6 +367,41 @@ def format_duration(seconds) -> str:
         return f"{int(seconds)}s"
 
 
+def is_priority_date(check_date: date) -> bool:
+    """Check if a date falls within any priority range"""
+    for priority_range in PRIORITY_RANGES:
+        start = datetime.strptime(priority_range["start"], "%Y-%m-%d").date()
+        end = datetime.strptime(priority_range["end"], "%Y-%m-%d").date()
+
+        # Check exact range
+        if start <= check_date <= end:
+            return True
+
+        # Check recurring yearly ranges (e.g., Jul 21-22 every year from 2019 onward)
+        if priority_range.get("recurring_yearly"):
+            if check_date.year >= start.year:
+                # Create the same month-day in the check_date's year
+                recurring_start = date(check_date.year, start.month, start.day)
+                recurring_end = date(check_date.year, end.month, end.day)
+                if recurring_start <= check_date <= recurring_end:
+                    return True
+
+        # Check recurring monthly ranges (e.g., Apr 26 - Jun 4 every year)
+        if priority_range.get("recurring_monthly"):
+            # Handle ranges that cross month boundaries
+            if (
+                (check_date.month == start.month and check_date.day >= start.day)
+                or (check_date.month == end.month and check_date.day <= end.day)
+                or (
+                    start.month < end.month
+                    and start.month < check_date.month < end.month
+                )
+            ):
+                return True
+
+    return False
+
+
 def build_empty_dashboard() -> str:
     """Build dashboard for empty database"""
     return """
@@ -542,12 +617,26 @@ def get_date_coverage(cursor) -> dict:
     if current_missing_start:
         missing_ranges.append((current_missing_start, end_date))
 
+    # Identify priority gaps
+    priority_gaps = []
+    for start, end in missing_ranges:
+        for priority in PRIORITY_RANGES:
+            p_start = datetime.strptime(priority["start"], "%Y-%m-%d").date()
+            p_end = datetime.strptime(priority["end"], "%Y-%m-%d").date()
+            # Check if priority range overlaps with gap
+            if not (p_end < start or p_start > end):
+                priority_gaps.append(
+                    (start, end, priority.get("label", "Priority Range"))
+                )
+                break
+
     return {
         "total_days": total_days,
         "archived_days": len(archived_dates),
         "coverage_pct": len(archived_dates) / total_days * 100 if total_days > 0 else 0,
         "year_coverage": year_coverage,
         "missing_ranges": missing_ranges[:10],  # Limit to 10 ranges for display
+        "priority_gaps": priority_gaps,  # Priority gaps that need work
     }
 
 
@@ -843,6 +932,115 @@ def generate_css() -> str:
     """
 
 
+def generate_heatmap(coverage: dict) -> str:
+    """Generate month-by-year heatmap visualization for coordination"""
+    if not coverage:
+        return ""
+
+    year_coverage = coverage.get("year_coverage", {})
+    if not year_coverage:
+        return ""
+
+    # Color mapping: Red for priority gaps, Yellow for partial, Green for complete
+    def get_color_and_status(pct):
+        if pct >= 95:
+            return "#22c55e", "✓ Complete"  # Green
+        elif pct >= 50:
+            return "#eab308", "◐ Partial"  # Yellow
+        elif pct > 0:
+            return "#f97316", "○ Low"  # Orange
+        else:
+            return "#64748b", "◯ Empty"  # Grey
+
+    months = [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
+    ]
+
+    html = """
+    <section class="card" style="margin-top: 24px;">
+        <h2 class="section-title">📅 Archive Heatmap (2013-2026)</h2>
+        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px;">
+            🟢 Complete (>95%) | 🟡 Partial (50-94%) | 🟠 Low (1-49%) | ⚫ Empty (0%)
+        </p>
+        <div style="display: grid; gap: 12px;">
+    """
+
+    for year in sorted(year_coverage.keys()):
+        data = year_coverage[year]
+        pct = (data["archived"] / data["total"] * 100) if data["total"] > 0 else 0
+
+        # Check if year has any priority dates
+        year_has_priority = False
+        for priority in PRIORITY_RANGES:
+            p_year_start = int(priority["start"][:4])
+            p_year_end = int(priority["end"][:4])
+            if p_year_start <= year <= p_year_end:
+                year_has_priority = True
+                break
+
+        year_label = f"<strong>{year}</strong>"
+        if year_has_priority:
+            year_label = f"🔥 {year_label}"
+
+        html += f"""
+            <div style="display: grid; grid-template-columns: 60px repeat(12, 1fr); gap: 4px; align-items: center;">
+                <div style="text-align: right; font-weight: 600; font-size: 12px;">{year_label}</div>
+        """
+
+        for month in range(1, 13):
+            check_date = date(year, month, 15)
+            is_priority = is_priority_date(check_date)
+
+            # Get month coverage (estimate based on year)
+            month_pct = pct  # Simplified - use year pct for all months
+            color, status = get_color_and_status(month_pct)
+
+            border_color = "#ef4444" if is_priority else "transparent"
+            border_style = f"border: 2px solid {border_color};" if is_priority else ""
+
+            html += f"""
+                <div style="
+                    width: 100%;
+                    aspect-ratio: 1;
+                    background: {color};
+                    border-radius: 4px;
+                    {border_style}
+                    opacity: 0.8;
+                    cursor: pointer;
+                    font-size: 10px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: white;
+                    font-weight: 600;
+                    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+                    title='{months[month - 1]} {year} - {status} ({month_pct:.0f}%)'
+                " title="{months[month - 1]} {year} - {status} ({month_pct:.0f}%)">
+                    {months[month - 1][:1]}
+                </div>
+            """
+
+        html += "</div>"
+
+    html += """
+        </div>
+    </section>
+    """
+
+    return html
+
+
 def generate_status_bars(breakdown, total) -> str:
     """Generate status breakdown bars"""
     if total == 0:
@@ -1110,6 +1308,9 @@ def build_dashboard_html(
             </div>
         </div>
 
+        <!-- Archive Heatmap -->
+        {generate_heatmap(coverage) if coverage else ""}
+
         <div class="grid grid-main">
             <!-- Left Column -->
             <div class="flex-column">
@@ -1159,302 +1360,6 @@ def build_dashboard_html(
                 {generate_volunteer_guide()}
             </div>
         </div>
-    </div>
-</body>
-</html>
-"""
-    return html
-
-
-def generate_batch_section(batches) -> str:
-    """Generate active batch jobs section"""
-    html = '<section class="section"><h2>Active Batch Jobs</h2>'
-
-    for batch in batches:
-        status_class = batch["status"]
-        html += f"""
-        <div class="batch-progress">
-            <div class="batch-header">
-                <div>
-                    <strong>{batch["id"]}</strong>
-                    <span class="batch-status {status_class}">{batch["status"].upper()}</span>
-                </div>
-                <span>{batch["date_range"]}</span>
-            </div>
-            <div class="bar">
-                <div class="bar-fill success" style="width: {batch["progress"]:.1f}%"></div>
-            </div>
-            <div style="margin-top: 5px; font-size: 14px; color: #666;">
-                {batch["archived"]} / {batch["total"]} articles · {batch["duration"]}
-            </div>
-        </div>
-        """
-
-    html += "</section>"
-    return html
-
-
-def generate_recent_feed(recent, status_emoji) -> str:
-    """Generate recent activity feed"""
-    html = ""
-
-    for item in recent:
-        emoji = status_emoji.get(item["status"], "❓")
-        title_truncated = (
-            item["title"][:80] + "..." if len(item["title"]) > 80 else item["title"]
-        )
-
-        html += f"""
-        <div class="activity-item">
-            <div>
-                {emoji}
-                <span style="color: #666;">{item["date"]}</span>
-                <span class="batch-status {item["status"]}" style="margin-left: 10px;">
-                    {item["status"]}
-                </span>
-            </div>
-            <div class="activity-title">{title_truncated}</div>
-            <a href="{item["url"]}" target="_blank" class="activity-url">{item["url"]}</a>
-        </div>
-        """
-
-    return html
-
-
-def generate_trends_rows(trends) -> str:
-    """Generate daily trends table rows"""
-    html = ""
-
-    for trend in trends:
-        success_rate = (
-            (trend["archived"] / trend["found"] * 100) if trend["found"] > 0 else 0
-        )
-
-        html += f"""
-        <tr>
-            <td><strong>{trend["date"]}</strong></td>
-            <td>{trend["found"]}</td>
-            <td>{trend["archived"]}</td>
-            <td>{trend["failed"]}</td>
-            <td>{trend["duration"]}</td>
-        </tr>
-        """
-
-    return html
-
-
-def generate_volunteer_guide() -> str:
-    """Generate the volunteer quick start guide section"""
-    return """
-        <section class="section">
-            <h2>🤝 Help Us Archive</h2>
-            <p style="margin-bottom: 16px; color: #9ca3af;">
-                Run a Docker container locally to help archive historical articles. Pick a missing date range above!
-            </p>
-
-            <div style="background: #1f2937; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
-                <h3 style="font-size: 0.9rem; color: #60a5fa; margin-bottom: 12px;">Quick Start</h3>
-                <pre style="background: #111827; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; line-height: 1.6;"><code style="color: #e5e7eb;"># Clone and build
-git clone https://github.com/yellowcandle/mingpao-backup.git
-cd mingpao-backup
-docker build -t mingpao-archiver .
-
-# Create data directories
-mkdir -p data logs
-
-# Archive a date range (example: 2015 Q1)
-docker run -v $(pwd)/data:/data -v $(pwd)/logs:/logs \\
-  mingpao-archiver --start 2015-01-01 --end 2015-03-31</code></pre>
-            </div>
-
-            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-                <a href="https://github.com/yellowcandle/mingpao-backup/issues/new?template=archive-claim.yml"
-                   target="_blank"
-                   style="display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; background: #22c55e; color: white; text-decoration: none; border-radius: 6px; font-weight: 500;">
-                    📋 Claim a Date Range
-                </a>
-                <a href="https://github.com/yellowcandle/mingpao-backup/blob/main/CONTRIBUTING.md"
-                   target="_blank"
-                   style="display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; background: #374151; color: white; text-decoration: none; border-radius: 6px; font-weight: 500;">
-                    📖 Full Guide
-                </a>
-                <a href="https://github.com/yellowcandle/mingpao-backup"
-                   target="_blank"
-                   style="display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; background: #374151; color: white; text-decoration: none; border-radius: 6px; font-weight: 500;">
-                    ⭐ GitHub Repo
-                </a>
-            </div>
-        </section>
-    """
-
-
-def generate_coverage_section(coverage: dict) -> str:
-    """Generate the date coverage section HTML"""
-    if not coverage:
-        return ""
-
-    total_days = coverage["total_days"]
-    archived_days = coverage["archived_days"]
-    coverage_pct = coverage["coverage_pct"]
-    year_coverage = coverage["year_coverage"]
-    missing_ranges = coverage["missing_ranges"]
-
-    # Generate year progress bars
-    year_bars = ""
-    for year in sorted(year_coverage.keys()):
-        data = year_coverage[year]
-        pct = (data["archived"] / data["total"] * 100) if data["total"] > 0 else 0
-        color = "#22c55e" if pct >= 80 else "#eab308" if pct >= 40 else "#ef4444"
-        year_bars += f"""
-            <div style="display: flex; align-items: center; margin-bottom: 8px;">
-                <span style="width: 50px; font-weight: bold;">{year}</span>
-                <div style="flex: 1; background: #374151; border-radius: 4px; height: 20px; overflow: hidden;">
-                    <div style="width: {pct:.1f}%; height: 100%; background: {color};"></div>
-                </div>
-                <span style="width: 80px; text-align: right; margin-left: 10px;">{pct:.0f}% ({data["archived"]}/{data["total"]})</span>
-            </div>
-        """
-
-    # Generate missing ranges list
-    missing_html = ""
-    for start, end in missing_ranges:
-        days = (end - start).days + 1
-        start_str = start.strftime("%Y-%m-%d")
-        end_str = end.strftime("%Y-%m-%d")
-        missing_html += f"""
-            <div style="padding: 8px 12px; background: #1f2937; border-radius: 6px; margin-bottom: 6px;">
-                <span style="color: #f87171;">●</span>
-                <strong>{start_str}</strong> to <strong>{end_str}</strong>
-                <span style="color: #9ca3af; margin-left: 8px;">({days} days)</span>
-            </div>
-        """
-
-    if not missing_html:
-        missing_html = '<div style="color: #22c55e;">All dates archived!</div>'
-
-    return f"""
-        <section class="section">
-            <h2>📅 Archive Coverage</h2>
-            <div style="margin-bottom: 20px;">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                    <span>Coverage: {archived_days:,} / {total_days:,} days</span>
-                    <span style="font-weight: bold; color: {"#22c55e" if coverage_pct >= 80 else "#eab308" if coverage_pct >= 40 else "#ef4444"};">{coverage_pct:.1f}%</span>
-                </div>
-                <div style="background: #374151; border-radius: 8px; height: 24px; overflow: hidden;">
-                    <div style="width: {coverage_pct:.1f}%; height: 100%; background: linear-gradient(90deg, #22c55e, #16a34a); transition: width 0.3s;"></div>
-                </div>
-            </div>
-
-            <h3 style="margin: 20px 0 12px; font-size: 1rem; color: #9ca3af;">Year by Year</h3>
-            <div style="margin-bottom: 20px;">
-                {year_bars}
-            </div>
-
-            <h3 style="margin: 20px 0 12px; font-size: 1rem; color: #9ca3af;">Missing Ranges (Top 10)</h3>
-            <div style="max-height: 200px; overflow-y: auto;">
-                {missing_html}
-            </div>
-        </section>
-    """
-
-
-def build_dashboard_html(
-    overall, breakdown, batches, recent, trends, timestamp, coverage=None
-) -> str:
-    """Generate complete dashboard HTML"""
-
-    # Status emoji mapping
-    status_emoji = {
-        "success": "✅",
-        "exists": "📦",
-        "failed": "❌",
-        "error": "⚠️",
-        "timeout": "⏱️",
-        "rate_limited": "🚫",
-    }
-
-    html = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ming Pao Archive Dashboard</title>
-    <style>
-        {generate_css()}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>📰 Ming Pao Archive Dashboard</h1>
-            <div class="refresh-bar">
-                <button onclick="location.reload()">🔄 Refresh</button>
-                <span class="timestamp">Last updated: {timestamp.strftime("%Y-%m-%d %H:%M:%S")}</span>
-            </div>
-        </header>
-
-        <!-- Summary Cards -->
-        <div class="summary-cards">
-            <div class="card">
-                <div class="card-value">{overall["total"]:,}</div>
-                <div class="card-label">Total Articles</div>
-            </div>
-            <div class="card success">
-                <div class="card-value">{overall["archived"]:,}</div>
-                <div class="card-label">Archived ({overall["success_rate"]})</div>
-            </div>
-            <div class="card error">
-                <div class="card-value">{overall["failed"]:,}</div>
-                <div class="card-label">Failed</div>
-            </div>
-            <div class="card">
-                <div class="card-value">{overall["days"]}</div>
-                <div class="card-label">Days Processed</div>
-            </div>
-        </div>
-
-        <!-- Status Breakdown -->
-        <section class="section">
-            <h2>Status Breakdown</h2>
-            {generate_status_bars(breakdown, overall["total"])}
-        </section>
-
-        <!-- Archive Coverage -->
-        {generate_coverage_section(coverage) if coverage else ""}
-
-        <!-- Volunteer Guide -->
-        {generate_volunteer_guide()}
-
-        <!-- Active Batches -->
-        {generate_batch_section(batches) if batches else ""}
-
-        <!-- Recent Archives -->
-        <section class="section">
-            <h2>Recent Archives</h2>
-            <div class="activity-feed">
-                {generate_recent_feed(recent, status_emoji)}
-            </div>
-        </section>
-
-        <!-- Daily Trends -->
-        <section class="section">
-            <h2>Daily Trends</h2>
-            <table class="trends-table">
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Found</th>
-                        <th>Archived</th>
-                        <th>Failed</th>
-                        <th>Duration</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {generate_trends_rows(trends)}
-                </tbody>
-            </table>
-        </section>
     </div>
 </body>
 </html>
@@ -2097,6 +2002,131 @@ def sync_from_wayback(start_date: str, end_date: str, rate_limit_delay: float = 
     print("=" * 60)
 
     return stats
+
+
+@app.function(
+    image=image,
+    volumes={"/data": volume},
+    timeout=3600,  # 1 hour timeout
+    schedule=modal.Cron("0 * * * *"),  # Every hour
+)
+def hourly_sync_wayback():
+    """
+    Hourly sync with Wayback Machine to keep dashboard accurate.
+
+    Automatically checks the last 30 days for any new archives or changes.
+    Runs every hour via Modal Cron scheduler.
+    """
+    import sqlite3
+    import requests
+    import time
+    from datetime import datetime, timedelta
+
+    end_date = datetime.now().strftime("%Y-%m-%d")
+    start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+
+    print(f"Starting hourly Wayback sync for {start_date} to {end_date}")
+
+    # URL prefixes for HK-GA articles
+    HK_GA_PREFIXES = [
+        "gaa",
+        "gab",
+        "gac",
+        "gad",
+        "gae",
+        "gaf",
+        "gag",
+        "gba",
+        "gbb",
+        "gbc",
+        "gbd",
+        "gbe",
+        "gca",
+        "gcb",
+        "gcc",
+        "gcd",
+        "gda",
+        "gdb",
+        "gdc",
+        "gha",
+        "ghb",
+        "ghc",
+        "gma",
+        "gmb",
+        "gmc",
+        "gna",
+        "gnb",
+        "gnc",
+        "goa",
+        "gob",
+        "goc",
+    ]
+
+    db_path = "/data/hkga_archive.db"
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        stats = {"checked": 0, "found": 0, "updated": 0}
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+        current_date = start_dt
+
+        while current_date <= end_dt:
+            date_str = current_date.strftime("%Y%m%d")
+
+            for prefix in HK_GA_PREFIXES:
+                for num in range(1, 20):
+                    url = f"http://www.mingpaocanada.com/tor/htm/News/{date_str}/HK-{prefix}{num}_r.htm"
+
+                    try:
+                        api_url = f"https://archive.org/wayback/available?url={url}"
+                        response = requests.get(api_url, timeout=10)
+                        data = response.json()
+
+                        stats["checked"] += 1
+                        snapshots = data.get("archived_snapshots", {})
+                        closest = snapshots.get("closest", {})
+
+                        if closest.get("available"):
+                            wayback_url = closest.get("url", "")
+                            cursor.execute(
+                                """
+                                INSERT INTO archive_records (article_url, wayback_url, archive_date, status, checked_wayback)
+                                VALUES (?, ?, ?, 'exists', 1)
+                                ON CONFLICT(article_url) DO UPDATE SET
+                                    wayback_url = excluded.wayback_url,
+                                    status = 'exists',
+                                    checked_wayback = 1,
+                                    updated_at = CURRENT_TIMESTAMP
+                            """,
+                                (url, wayback_url, date_str),
+                            )
+                            stats["found"] += 1
+                            stats["updated"] += 1
+
+                        time.sleep(0.2)
+                    except Exception as e:
+                        print(f"Error checking {url}: {e}")
+                        time.sleep(1)
+
+            conn.commit()
+            volume.commit()
+            current_date += timedelta(days=1)
+
+        conn.close()
+        volume.commit()
+
+        print(f"Hourly sync completed: {stats}")
+        return stats
+
+    except Exception as e:
+        print(f"Hourly sync error: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return {"status": "error", "error": str(e)}
 
 
 @app.local_entrypoint()
